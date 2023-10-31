@@ -1,5 +1,7 @@
 ###  Dilithium
 using Nemo
+include("Shake/shake.jl")
+using Main.SHA3
 abstract type DILITHIUM_PARAMETER end
 struct D_Param<:DILITHIUM_PARAMETER
     n::Int
@@ -81,3 +83,5 @@ end =#
 
 
 
+testseed = b"TeuleXOOIwXiRtofPsOFNbh2dHaVlAGZ"
+shake256(testseed,128)

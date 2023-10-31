@@ -1,0 +1,4 @@
+Parts from the code shake.jl are extracted from the SHA.jl package.
+I used parts of the sha3.jl / and the keccak function to implement the shake functionality.
+
+Refereed to NIST standard:
