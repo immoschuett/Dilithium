@@ -268,8 +268,8 @@ function shakedigest2!(context::T,d::Int) where {T<:SHAKE}
         #TODO here is still a flaw
         @warn "d>136 incorrect"
         #update!(context,b"")
-        transform2!(context)
-        b = shakedigest!(context,d-SHAKE_256_max_dig)
+        #transform2!(context)
+        b = shakedigest2!(context,d-SHAKE_256_max_dig)
         return vcat(a,b)
     end
 end
