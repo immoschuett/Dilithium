@@ -2,7 +2,6 @@ module SHA3
 export shake256
 export sha3_256
 export sha3_512
-
 # SHAKE 256 context structures
 abstract type SHAKE end
 mutable struct SHAKE_256_CTX <: SHAKE
@@ -48,23 +47,18 @@ const SHA3_PILN = Int[
     11, 8,  12, 18, 19, 4, 6,  17, 9,  22, 25, 5,
     16, 24, 20, 14, 13, 3, 21, 15, 23, 10,  7,  2
 ]
-
 const SHAKE_256_max_dig = 136 # 1088/8
 
 digestlen(::Type{SHA3_256_CTX}) = 32
 digestlen(::Type{SHAKE_256_CTX}) = 32
 digestlen(::Type{SHA3_512_CTX}) = 64
-
 blocklen(::Type{SHA3_256_CTX}) = UInt64(25*8 - 2*digestlen(SHA3_256_CTX))
 blocklen(::Type{SHAKE_256_CTX}) = UInt64(25*8 - 2*digestlen(SHAKE_256_CTX))
 blocklen(::Type{SHA3_512_CTX}) = UInt64(25*8 - 2*digestlen(SHA3_512_CTX))
-
 buffer_pointer(ctx::T) where {T<:SHAKE} = Ptr{state_type(T)}(pointer(ctx.buffer))
-
 # 64-bit Rotate-left (used in SHA3)
 lrot(b,x,width) = ((x << b) | (x >> (width - b)))
 L64(b,x) = lrot(b,x,64)
-
 # construct an empty SHA context
 SHAKE_256_CTX() = SHAKE_256_CTX(zeros(UInt64, 25), 0, zeros(UInt8, blocklen(SHAKE_256_CTX)), Vector{UInt64}(undef, 5), false)
 SHA3_512_CTX() = SHA3_512_CTX(zeros(UInt64, 25), 0, zeros(UInt8, blocklen(SHAKE_256_CTX)), Vector{UInt64}(undef, 5), false)
@@ -78,14 +72,12 @@ function transform!(context::T) where {T<:SHAKE}
     end
     bc = context.bc
     state = context.state
-
     # We always assume 24 rounds
     @inbounds for round in 0:23
         # Theta function
         for i in 1:5
             bc[i] = state[i] ⊻ state[i + 5] ⊻ state[i + 10] ⊻ state[i + 15] ⊻ state[i + 20]
         end
-
         for i in 0:4
             temp = bc[rem(i + 4, 5) + 1] ⊻ L64(1, bc[rem(i + 1, 5) + 1])
             j = 0
@@ -94,7 +86,6 @@ function transform!(context::T) where {T<:SHAKE}
                 j += 5
             end
         end
-
         # Rho Pi
         temp = state[2]
         for i in 1:24
@@ -103,7 +94,6 @@ function transform!(context::T) where {T<:SHAKE}
             state[j] = L64(SHA3_ROTC[i], temp)
             temp = bc[1]
         end
-
         # Chi
         j = 0
         while j <= 20
@@ -115,7 +105,49 @@ function transform!(context::T) where {T<:SHAKE}
             end
             j += 5
         end
-
+        # Iota
+        state[1] = state[1] ⊻ SHA3_ROUND_CONSTS[round+1]
+    end
+    return context.state
+end
+function transform2!(context::T) where {T<:SHAKE}
+    # First, update state with buffer
+    pbuf = Ptr{eltype(context.state)}(pointer(context.buffer))
+    bc = context.bc
+    state = context.state
+    # We always assume 24 rounds
+    @inbounds for round in 0:23
+        # Theta function
+        for i in 1:5
+            bc[i] = state[i] ⊻ state[i + 5] ⊻ state[i + 10] ⊻ state[i + 15] ⊻ state[i + 20]
+        end
+        for i in 0:4
+            temp = bc[rem(i + 4, 5) + 1] ⊻ L64(1, bc[rem(i + 1, 5) + 1])
+            j = 0
+            while j <= 20
+                state[Int(i + j + 1)] = state[i + j + 1] ⊻ temp
+                j += 5
+            end
+        end
+        # Rho Pi
+        temp = state[2]
+        for i in 1:24
+            j = SHA3_PILN[i]
+            bc[1] = state[j]
+            state[j] = L64(SHA3_ROTC[i], temp)
+            temp = bc[1]
+        end
+        # Chi
+        j = 0
+        while j <= 20
+            for i in 1:5
+                bc[i] = state[i + j]
+            end
+            for i in 0:4
+                state[j + i + 1] = state[j + i + 1] ⊻ (~bc[rem(i + 1, 5) + 1] & bc[rem(i + 2, 5) + 1])
+            end
+            j += 5
+        end
         # Iota
         state[1] = state[1] ⊻ SHA3_ROUND_CONSTS[round+1]
     end
@@ -125,7 +157,6 @@ function update!(context::T, data::U, datalen=length(data)) where {T<:SHAKE, U<:
     context.used && error("Cannot update CTX after `digest!` has been called on it")
     # We need to do all our arithmetic in the proper bitwidth
     UIntXXX = typeof(context.bytecount)
-
     # Process as many complete blocks as possible
     0 ≤ datalen ≤ length(data) || throw(BoundsError(data, firstindex(data)+datalen-1))
     len = convert(UIntXXX, datalen)
@@ -134,13 +165,11 @@ function update!(context::T, data::U, datalen=length(data)) where {T<:SHAKE, U<:
     while len - data_idx + usedspace >= blocklen(T)
         # Fill up as much of the buffer as we can with the data given us
         copyto!(context.buffer, usedspace + 1, data, data_idx + 1, blocklen(T) - usedspace)
-
         transform!(context)
         context.bytecount += blocklen(T) - usedspace
         data_idx += blocklen(T) - usedspace
         usedspace = convert(UIntXXX, 0)
     end
-
     # There is less than a complete block left, but we need to save the leftovers into context.buffer:
     if len > data_idx
         copyto!(context.buffer, usedspace + 1, data, data_idx + 1, len - data_idx)
@@ -171,11 +200,9 @@ function digest!(context::T) where {T<:SHAKE}
         transform!(context)
         context.used = true
     end
-
     # Return the digest
     return reinterpret(UInt8, context.state)[1:digestlen(T)]
 end
-
 function shakedigest!(context::T,d::Int) where {T<:SHAKE}
     if !context.used
         usedspace = context.bytecount % blocklen(T)
@@ -191,16 +218,13 @@ function shakedigest!(context::T,d::Int) where {T<:SHAKE}
             # Otherwise, we have to add on a whole new buffer just for the zeros and 0x80
             context.buffer[end] = 0x1f
             transform!(context)
-
             context.buffer[1:end-1] .= 0x0
             context.buffer[end] = 0x80
         end
-
         # Final transform:
         transform!(context)
         #context.used = true
     end
-
     # Return the digest
     if d <= SHAKE_256_max_dig
         return reinterpret(UInt8, context.state)[1:d]
@@ -208,49 +232,60 @@ function shakedigest!(context::T,d::Int) where {T<:SHAKE}
         a = reinterpret(UInt8, context.state)[1:SHAKE_256_max_dig]
         #TODO here is still a flaw
         @warn "d>136 incorrect"
-        update!(context,b"")
+        #update!(context,b"")
+        #transform2!(context)
+        b = shakedigest2!(context,d-SHAKE_256_max_dig)
+        return vcat(a,b)
+    end
+end
+function shakedigest2!(context::T,d::Int) where {T<:SHAKE}
+    if !context.used
+        usedspace = context.bytecount % blocklen(T)
+        # If we have anything in the buffer still, pad and transform that data
+        if usedspace < blocklen(T) - 1
+            # Begin padding with a 0x1f
+            context.buffer[usedspace+1] = 0x1f
+            # Fill with zeros up until the last byte
+            context.buffer[usedspace+2:end-1] .= 0x00
+            # Finish it off with a 0x80
+            context.buffer[end] = 0x80
+        else
+            # Otherwise, we have to add on a whole new buffer just for the zeros and 0x80
+            context.buffer[end] = 0x1f
+            transform2!(context)
+            context.buffer[1:end-1] .= 0x0
+            context.buffer[end] = 0x80
+        end
+        # Final transform:
+        transform2!(context)
+        #context.used = true
+    end
+    # Return the digest
+    if d <= SHAKE_256_max_dig
+        return reinterpret(UInt8, context.state)[1:d]
+    else 
+        a = reinterpret(UInt8, context.state)[1:SHAKE_256_max_dig]
+        #TODO here is still a flaw
+        @warn "d>136 incorrect"
+        #update!(context,b"")
+        transform2!(context)
         b = shakedigest!(context,d-SHAKE_256_max_dig)
         return vcat(a,b)
     end
 end
-
-function shake256(data::AbstractBytes)
-    ctx = SHAKE_256_CTX()
-    update!(ctx, data)
-    return shakedigest!(ctx)
-end
-
 function sha3_512(data::AbstractBytes)
     ctx = SHA3_512_CTX()
     update!(ctx, data)
     return digest!(ctx)
 end
-
 function sha3_256(data::AbstractBytes)
     ctx = SHA3_256_CTX()
     update!(ctx, data)
     return digest!(ctx)
 end
-
 function shake256(data::AbstractBytes,d::Int)
     ctx = SHAKE_256_CTX()
     update!(ctx, data)
     return shakedigest!(ctx,d)
 end
-#=
-sha3_512(b"cdr")
-sha3_256(b"f81f897874c952dcfe603eb4aef7d91")
-shake256(b"cdr",136)
-
-typeof(b"as")
-
-b"a"
-g = reinterpret(UInt8, b"ab")
-reinterpret(string,g)
-
-typeof(b"ab")
-
-convert(String,g)
-=#
-
 end # module

@@ -3,6 +3,7 @@ using Nemo
 include("Shake/shake.jl")
 using Main.SHA3
 abstract type DILITHIUM_PARAMETER end
+# Dilithium Parameter and Structs
 struct D_Param<:DILITHIUM_PARAMETER
     n::Int
 	q::Int
@@ -11,10 +12,20 @@ struct D_Param<:DILITHIUM_PARAMETER
     eta::Int
 end
 struct D_Struct<:DILITHIUM_PARAMETER
-    P::D_Param
-    R::zzModPolyRing
-    mod::zzModPolyRingElem
+    P::D_Param                      # Parameter
+    R::zzModPolyRing                # R = ZZ/(q)ZZ
+    mod::zzModPolyRingElem          # x^n + 1 \in R
 end 
+# Dilithium Context, containing the seeds to build all elements. 
+struct D_CTX<:DILITHIUM_PARAMETER
+    rho::Array{UInt8, 1}
+    rho_prime::Array{UInt8, 1}
+    K::Array{UInt8, 1}
+end
+function init_Dctx(seed::Base.CodeUnits{UInt8, String})
+    H = shake256(seed,128)
+    return D_CTX(H[1:32],H[32:97],H[97:end])
+end  
 function init_param(n::Int,q::Int,k::Int,l::Int,eta::Int)
     ispow2(n) || @error "n is not a power of 2"
     isprime(q) || @error "q is not prime"
@@ -84,4 +95,15 @@ end =#
 
 
 testseed = b"TeuleXOOIwXiRtofPsOFNbh2dHaVlAGZ"
-shake256(testseed,128)
+init_Dctx(testseed)
+
+#TODO fix SHAKE, add SHAKE128, write iterator for the random numbers.
+
+
+
+@time shake256(b"abc",18000)
+#29 ->  cf0ea610
+
+
+
+
