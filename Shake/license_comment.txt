@@ -1,4 +1,4 @@
-Parts from the code shake.jl are extracted from the SHA.jl package.
-I used parts of the sha3.jl / and the keccak function to implement the shake functionality.
+The keccak functions for SHA3 (transform, update, digest) were extracted from the SHA.jl package, which is licensed under the MIT "Expat" License (see appended Licence)
 
-Refereed to NIST standard:
+I modified parameters, added types and changed some functions to use SHAKE according the NIST (FIPS PUB 202). A pull request for SHA.jl will be coming soon.
+

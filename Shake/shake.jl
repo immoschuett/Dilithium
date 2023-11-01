@@ -1,12 +1,11 @@
 module SHAK3
-export shake256
-export sha3_256
-export sha3_512
-export shake128
-# SHAKE 256 context structures
+export sha3_256,sha3_512,shake128,shake256
+
+# SHA structures
 abstract type SHA end
 abstract type SHAKE <: SHA end 
 abstract type SHA3 <: SHA end 
+# note, that field property used has differend uses, depending on T<:SHAKE or T<:SHA3
 mutable struct SHAKE_128_CTX <: SHAKE
     state::Array{UInt64,1}
     bytecount::UInt128
@@ -58,10 +57,11 @@ const SHA3_PILN = Int[
     16, 24, 20, 14, 13, 3, 21, 15, 23, 10,  7,  2
 ]
 
-digestlen(::Type{SHAKE_128_CTX}) = 32
+digestlen(::Type{SHAKE_128_CTX}) = 16
 digestlen(::Type{SHA3_256_CTX}) = 32
 digestlen(::Type{SHAKE_256_CTX}) = 32
 digestlen(::Type{SHA3_512_CTX}) = 64
+blocklen(::Type{SHAKE_128_CTX}) = UInt64(25*8 - 2*digestlen(SHAKE_128_CTX))
 blocklen(::Type{SHAKE_128_CTX}) = UInt64(25*8 - 2*digestlen(SHAKE_128_CTX))
 blocklen(::Type{SHA3_256_CTX}) = UInt64(25*8 - 2*digestlen(SHA3_256_CTX))
 blocklen(::Type{SHAKE_256_CTX}) = UInt64(25*8 - 2*digestlen(SHAKE_256_CTX))

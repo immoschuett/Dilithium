@@ -1,7 +1,8 @@
 ###  Dilithium
 using Nemo
 include("Shake/shake.jl")
-using Main.SHA3
+using Main.SHAK3
+
 abstract type DILITHIUM_PARAMETER end
 # Dilithium Parameter and Structs
 struct D_Param<:DILITHIUM_PARAMETER
@@ -92,18 +93,11 @@ function convert()
 #         -arrays of ring elements to corresponding arrays w.r.t. our ordering.
 end =#
 
-
-
+# Tests:
+shake256(b"ab",UInt(10000))
+shake128(b"ab",UInt(1000))
+sha3_256(b"ab")
+sha3_512(b"ab124123")
 testseed = b"TeuleXOOIwXiRtofPsOFNbh2dHaVlAGZ"
 init_Dctx(testseed)
-
-#TODO fix SHAKE, add SHAKE128, write iterator for the random numbers.
-
-
-
-@time shake256(b"abc",18000)
-#29 ->  cf0ea610
-
-
-
-
+shake256(shake128(b"ab",UInt(1000)),UInt(10000))
