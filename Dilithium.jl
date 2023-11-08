@@ -94,10 +94,95 @@ function convert()
 end =#
 
 # Tests:
-shake256(b"ab",UInt(10000))
+@time shake256(b"test",UInt(1000))
 shake128(b"ab",UInt(1000))
 sha3_256(b"ab")
 sha3_512(b"ab124123")
 testseed = b"TeuleXOOIwXiRtofPsOFNbh2dHaVlAGZ"
 init_Dctx(testseed)
 shake256(shake128(b"ab",UInt(1000)),UInt(10000))
+
+length("TeuleXOOIwXiRtofPsOFNbh2dHaVlAGZTeuleXOOIwXiRtofPsOFNbh2dHaVlAGZTeuleXOOIwXiRtofPsOFNbh2dHaVlAGZTeuleXOOIwXiRtofPsOFNbh2dHaVlAGZTeuleXOOIwXiRtofPsOFNbh2dHaVlAGZTeuleXOOIwXiRtofPsOFNbh2dHaVlAGZTeuleXOOIwXiRtofPsOFNbh2dHaVlAGZTeuleXOOIwXiRtofPsOFNbh2dHaVlAGZTeuleXOOIwXiRtofPsOFNbh2dHaVlAGZ")
+#TODO prealloc memory for shake! 
+
+
+function expandA()
+
+end 
+
+function NTT(n::Int,f::Array{zzModRingElem, 1},zeta::zzModRingElem,Zeta=[zeta^i for i = 0:n]::Array{zzModRingElem, 1})
+    # f is coefficient vector of polynomial
+    ispow2(n) || @error "n not a power of 2"
+    if n == 1
+        return f
+    end 
+    #check zeta is n-th root of unity 
+    # TODO 
+    # write f = g(x^2) + x*h(x)
+    A = zeros(parent(f[1]),n)
+    g = f[1:2:end]# even coeffs
+    h = f[2:2:end]# odd coeffs
+    B = NTT(divexact(n,2),g,Zeta[3],Zeta[1:2:end])  #B = NTT(divexact(n,2),g,zeta^2)
+    C = NTT(divexact(n,2),h,Zeta[3],Zeta[1:2:end])  #C = NTT(divexact(n,2),h,zeta^2)
+    for i = 1:divexact(n,2)
+        A[i] = B[i] + Zeta[i]*C[i]                  #A[i] = B[i] + zeta^(i-1)*C[i]
+        A[divexact(n,2)+i] = B[i] - Zeta[i]*C[i]    #A[divexact(n,2)+i] = B[i] - zeta^(i-1)*C[i]
+    end 
+    return A
+end 
+
+
+function INTT(n,f,zeta,reduce=false)
+    I = inv(parent(f[1])(n)).*NTT(n,f,inv(zeta))
+    # shift and/or reduce with x^n/2 +1 
+    if reduce
+        return I[1:divexact(n,2)].-I[divexact(n,2)+1:end]
+    end 
+    return I
+end 
+
+
+using Hecke
+
+#example NTT
+using Nemo
+
+R = ResidueRing(ZZ,17)
+
+f = R.([2,1,0,7,0,0,0,0])
+P,x = PolynomialRing(R,"x")
+
+# achtung jetzt andere reihenfolge
+
+eta = R(2) # 8-th root of unity
+testp1 = 3+2x+x^3
+testp2 = 4+12x+x^2+7x^3
+t1 = collect(coefficients(testp1))
+T1 = vcat(t1,R.([0,0,0,0]))
+t2 = collect(coefficients(testp2))
+T2 = vcat(t2,R.([0,0,0,0]))
+NTT(8,T1,eta)
+
+[testp1(eta^(i)) for i = 0:7]
+t2 = collect(coefficients(testp2))
+T2 = vcat(R.([0,0,0,0]),t2[end:-1:1])
+
+eta = R(2) # 8-th primitive root mot 17
+d = INTT(8,NTT(8,T1,eta).*NTT(8,T2,eta),eta,true)
+
+testp1*testp2.%(x^4+1)
+9-14 +17
+t4 = vcat(collect(coefficients(testp1*testp2)),R.([0]))
+T4 = t4[end:-1:1]
+NTT(8,T4,eta)
+
+2^7 % 17
+
+INTT(8,NTT(8,T1,eta).*NTT(8,T2,eta),eta)
+
+is_primitive(2,17)
+
+inv(eta)
+function MUL(A::NTT_Rep,B::NTT_Rep)
+
+end 
