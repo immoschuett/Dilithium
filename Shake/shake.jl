@@ -246,6 +246,8 @@ function digest!(context::T,d::UInt) where {T<:SHAKE}
 
         return reinterpret(UInt8, context.state)[1:d]
     else 
+        # TODO prealloc
+        # ! prealloc memory here for performance
         a = reinterpret(UInt8, context.state)[1:blocklen(T)]
         context.used = true
         b = digest!(context,d-blocklen(T))
