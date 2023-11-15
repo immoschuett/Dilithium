@@ -1,57 +1,70 @@
 ###  Dilithium
-using Nemo
-include("Shake/shake.jl")
-using Main.SHAK3
+module Dilithium
 
-abstract type DILITHIUM_PARAMETER end
-# Dilithium Parameter and Structs
-struct D_Param<:DILITHIUM_PARAMETER # containing parameters
+using Nemo
+
+struct Param
     n::Int
-	q::Int
+    q::Int
     k::Int
     l::Int
     eta::Int
+    R::zzModPolyRing       # R = ZZ/(q)ZZ
+    mod::zzModPolyRingElem 
 end
-struct D_Struct<:DILITHIUM_PARAMETER # containing parameters and structures
-    P::D_Param                      # Parameter
-    R::zzModPolyRing                # R = ZZ/(q)ZZ
-    mod::zzModPolyRingElem          # x^n + 1 \in R
-end 
+
+function Param(n::Int = 256, q::Int = 8380417, k::Int = 10, l::Int = 10, eta::Int = 2) 
+    ispow2(n) || @error "n is not a power of 2"
+    isprime(q) || @error "q is not prime"
+    (1 == q % (2 * n)) || @warn "NTT not supported by this choice of parameters"
+
+    R, x = PolynomialRing(ResidueRing(ZZ, q), "x")
+    mod = (gen(R) ^ n + 1)
+    return Param(n, q, k, l, eta, R, mod)
+end
+
+struct Pk
+    A::Matrix{zzModPolyRingElem}
+    t::Matrix{zzModPolyRingElem}
+end
+
+struct Sk
+    A::Matrix{zzModPolyRingElem}
+    t::Matrix{zzModPolyRingElem}
+    s1::Matrix{zzModPolyRingElem}
+    s2::Matrix{zzModPolyRingElem}
+end
+
+function KeyGen(p::Param = Param())
+    S = MatrixSpace(p.R, p.k, p.l)
+    A = Matrix(rand(S, 0:p.n))
+   
+    S1 = MatrixSpace(p.R, p.l, 1)
+    S2 = MatrixSpace(p.R, p.k, 1)
+    s1 = Matrix(rand(S1, -1:p.n, -p.eta:p.eta))
+    s2 = Matrix(rand(S2, -1:p.n, -p.eta:p.eta))
+
+    t = (A * s1 + s2) .% p.mod
+
+    pk = Pk(A, t)
+    sk = Sk(A, t, s1, s2)
+
+    return (pk, sk)
+end
+end # module Dilithium
+
+module Temp
+include("Shake/shake.jl")
+using .SHAK3
+using Nemo
+
 # Dilithium Context, containing the seeds to build all elements. 
-struct D_CTX<:DILITHIUM_PARAMETER
+struct D_CTX
     rho::Array{UInt8, 1}
     rho_prime::Array{UInt8, 1}
     K::Array{UInt8, 1}
 end
-function init_Dctx(seed::Base.CodeUnits{UInt8, String})
-    H = shake256(seed,0x000000080)
-    return D_CTX(H[1:32],H[32:97],H[97:end])
-end  
-function init_param(n::Int=256,q=8380417::Int,k=10::Int,l=10::Int,eta=2::Int)
-    ispow2(n) || @error "n is not a power of 2"
-    isprime(q) || @error "q is not prime"
-    (1 == q%(2*n)) || @warn "NTT not supported by this choice of parameters"
-    return D_Param(n,q,k,l,eta)
-end 
-function init_ring(param::D_Param=init_param())
-    R,x=PolynomialRing(ResidueRing(ZZ,param.q),"x")
-    mod = (gen(R)^param.n + 1)
-    return D_Struct(param,R,mod)
-end 
-function key_gen(DIL::D_Struct)
-    param = DIL.P
-    S = MatrixSpace(DIL.R,param.k,param.l)
-    # samle according the given distributions
-    S1 = MatrixSpace(DIL.R,param.l,1)
-    S2 = MatrixSpace(DIL.R,param.k,1)   
-    A = rand(S,0:param.n)  # ! degree >= 0, this excludes the 0 here ! 
-    s1 = rand(S1,-1:param.n,-param.eta:param.eta)
-    s2 = rand(S2,-1:param.n,-param.eta:param.eta)
-    t = (A*s1+s2).% DIL.mod
-    pk = (A,t)
-    sk = (A,t,s1,s2)
-    return (pk,sk)
-end
+
 # small helper functions
 function array2ring(a,R)
     x = gen(R)
@@ -70,6 +83,11 @@ function format(A,DIL)
     end 
     return A
 end 
+
+function init_Dctx(seed::Base.CodeUnits{UInt8, String})
+    H = shake256(seed,0x000000080)
+    return D_CTX(H[1:32],H[32:97],H[97:end])
+end  
 
 # TODO encript(sign), decrypt(vrfy), tests
 #TODO prealloc memory for shake! Pull request to SHA.jl
@@ -95,6 +113,7 @@ function NTT(n::Int,f::Array{zzModRingElem, 1},zeta::zzModRingElem,Zeta=[zeta^i 
     end 
     return A
 end 
+
 function INTT(n,f,zeta,reduce=false)
     I = inv(parent(f[1])(n)).*NTT(n,f,inv(zeta))
     # shift and/or reduce with x^n/2 +1 i.e subtract the higher registers from the lower registers, since  x^n \cong -1 
@@ -103,6 +122,7 @@ function INTT(n,f,zeta,reduce=false)
     end 
     return I
 end 
+
 function expandA(D=init_Dctx(testseed)::D_CTX,DIL=init_ring(init_param(256,8380417,10,10,2))::D_Struct)
     # ! WARN this is not identical with the reference (different endianess / mapping into Zq, PROTOTYPE ONLY
     S = MatrixSpace(DIL.R,DIL.P.k,DIL.P.l)
@@ -129,39 +149,4 @@ function expandA(D=init_Dctx(testseed)::D_CTX,DIL=init_ring(init_param(256,83804
     return A
 end 
 
-#########################################################################################################################################
-### EXAMPLES
-orig_DiL = init_ring()
-DIL = init_ring(init_param(7,6,10,10,2))
-key = key_gen(DIL)
-A = key[1][1]
-digitalA = format(A,DIL)
-#########################################################################################################################################
-# shake 
-shake128(b"ab",UInt(1000))
-shake256(b"ab",UInt(912))
-sha3_256(b"ab")
-testseed = b"TeuleXOOIwXiRtofPsOFNbh2dHaVlAGZ"
-init_Dctx(testseed)
-#########################################################################################################################################
-# expand from seed
-expandA()
-
-#########################################################################################################################################
-#ntt
-R = ResidueRing(ZZ,17)
-P,x = PolynomialRing(R,"x")
-
-zeta = R(2) # 8-th root of unity mod 17
-testp1 = 3+2x+x^3
-testp2 = 4+12x+x^2+7x^3
-t1 = collect(coefficients(testp1))
-T1 = vcat(t1,R.([0,0,0,0]))
-t2 = collect(coefficients(testp2))
-T2 = vcat(t2,R.([0,0,0,0]))
-NTT(8,T1,zeta)
-
-d = INTT(8,NTT(8,T1,zeta).*NTT(8,T2,zeta),zeta)
-r =INTT(8,NTT(8,T1,zeta).*NTT(8,T2,zeta),zeta,true)
-testp1*testp2
-testp1*testp2.%(x^4+1)
+end # module test
