@@ -1,4 +1,1 @@
-The keccak functions for SHA3 (transform, update, digest) were extracted from the SHA.jl package, which is licensed under the MIT "Expat" License (see appended Licence)
-
-I modified parameters, added types and changed some functions to use SHAKE according the NIST (FIPS PUB 202). A pull request for SHA.jl will be coming soon.
-
+The keccak functions for SHA3 (transform, update, digest) were extracted from the SHA.jl package,the shake.jl package was succesfully merged into SHA.jl

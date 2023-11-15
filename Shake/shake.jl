@@ -1,5 +1,5 @@
 module SHAK3
-export sha3_256,sha3_512,shake128,shake256
+export shake128,shake256
 
 # SHA structures
 abstract type SHAKE end
