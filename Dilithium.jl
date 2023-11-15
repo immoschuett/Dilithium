@@ -8,6 +8,7 @@ struct D_CTX{T <: UInt8}
     rho::Array{T, 1}
     rho_prime::Array{T, 1}
     K::Array{T, 1}
+    tr::Array{T, 1}
 end
 
 struct Param
@@ -15,6 +16,7 @@ struct Param
     q::Int
     k::Int
     l::Int
+    d::Int
     eta::Int
     R::zzModPolyRing       # R = ZZ/(q)ZZ
     mod::zzModPolyRingElem 
@@ -23,12 +25,14 @@ end
 
 struct Pk{T <: zzModPolyRingElem}  # later Matrix{Vector{zzModRingElem}}
     A:: Matrix{T}
-    t::Vector{T}
+    t::Vector{T}#debug only
+    t1::Vector{T}
 end
 
 struct Sk{T <: zzModPolyRingElem}
-    A:: Matrix{T}
-    t::Vector{T}
+    A:: Matrix{T}#also possible to use seed rho here
+    t::Vector{T} #debug only
+    t0::Vector{T}
     s1::Vector{T}
     s2::Vector{T}
 end
@@ -36,11 +40,11 @@ end
 #core functions
 
 function init_ctx(seed::Base.CodeUnits{UInt8, String})
-    H = shake256(seed,0x000000080)
-    return D_CTX(H[1:32],H[32:97],H[97:end])
+    H = shake256(seed,0x0000000a0)
+    return D_CTX(H[1:32],H[32:97],H[97:128],H[129:end])
 end  
 
-function Param(n::Int = 256, q::Int = 8380417, k::Int = 5, l::Int = 7, eta::Int = 2, seed=b"") 
+function Param(n::Int = 256, q::Int = 8380417, k::Int = 5, l::Int = 7, d::Int = 13, eta::Int = 2, seed=b"") 
     ispow2(n)               || @error "n is not a power of 2"
     isprime(q)              || @error "q is not prime"
     (1 == q%(2*n))          || @warn  "NTT not supported by this choice of parameters"
@@ -49,17 +53,22 @@ function Param(n::Int = 256, q::Int = 8380417, k::Int = 5, l::Int = 7, eta::Int 
     eta in [2,4]            || @error "eta has to be 2 or 4"
     R, _ = PolynomialRing(ResidueRing(ZZ, q), "x")
     mod = (gen(R) ^ n + 1)
-    return Param(n, q, k, l, eta, R, mod, init_ctx(seed))
+    return Param(n, q, k, l, d, eta, R, mod, init_ctx(seed))
 end
 
 function KeyGen(p::Param = Param())
     A = expandA(p)
     s1,s2 = expandS(p::Param)
     t = (A * s1 + s2) .% p.mod
-    pk = Pk(A,t)
-    sk = Sk(A, t, s1, s2)
+    pk = Pk(A,t, power2rnd_array(t,p)[1])
+    sk = Sk(A, t, power2rnd_array(t,p)[2], s1, s2)
     return (pk, sk)
 end
+
+function Sign(sk,m,p)
+    u = shake256(vcat(p.ctx.tr,m),0x0000000000000040)
+    return u
+end 
 
 # small helper functions
 # TODO make the helper functions nice and efficient
@@ -84,6 +93,18 @@ function format(A,p::Param)# where T<:Union{Matrix{Vector{zzModRingElem}},Matrix
     end 
     return A
 end 
+
+function power2rnd_array(a,p)
+    b = deepcopy(a)
+    c = deepcopy(a)
+    for i=1:length(a)
+        q,r = divrem(p.R(a[i]),p.R(2^p.d))
+        b[i] = q
+        c[i] = r
+    end 
+    return b,c
+end 
+
 
 function expandA(p::Param)
     S = MatrixSpace(p.R, p.k, p.l)
@@ -142,6 +163,8 @@ function expandS(p::Param)
     return array2ring(s1,p.R),array2ring(s2,p.R)
 end 
 
-
+function expandY()
+    # TODO
+end 
 
 end # module Dilithium
