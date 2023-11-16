@@ -49,6 +49,12 @@ function KeyGen(p::Param = Param())
     return (pk, sk)
 end
 
+"""
+        array2ring(M::Matrix{zzModPolyRingElem}})
+
+    returns  Matrix{Vector{Nemo.zzModRingElem}}, it converts ring element of M[i,j] into a vector c[i,j] of coefficients.
+    Where c[i,j][1] belongs to the lowest degree coefficient and c[i,j][end] the highes degree coefficient.
+"""
 function ring2array(M::Matrix{zzModPolyRingElem})
     function elem2elem(e)
         #println(vcat(collect(coefficients(e)),zeros(base_ring(e),p.n-length(coefficients(e)))))
@@ -57,6 +63,11 @@ function ring2array(M::Matrix{zzModPolyRingElem})
     return elem2elem.(M)
     # returns type Matrix{Vector{Nemo.zzModRingElem}}
 end 
+"""
+        pad_matrox(M::Matrix{Vector{Nemo.zzModRingElem}}, p::Param)
+
+    returns again M::Matrix{Vector{Nemo.zzModRingElem}, but every coefficient vector is expanded to length(p.n)
+"""
 function pad_matrix(M::Matrix{Vector{Nemo.zzModRingElem}}, p::Param)
     function padvec(v)
         return vcat(v,zeros(parent(v[1]),p.n-length(v)))
@@ -64,10 +75,16 @@ function pad_matrix(M::Matrix{Vector{Nemo.zzModRingElem}}, p::Param)
     return padvec.(M)
     # returns type Matrix{Vector{Nemo.zzModRingElem}}
 end 
+"""
+        array2ring(M::Matrix{Vector{Nemo.zzModRingElem}}, p::Param)
+
+    returns  M::Matrix{zzModPolyRingElem}, it converts each coefficient vector to a ring element in p.R
+"""
 function array2ring(M::Matrix{Vector{Nemo.zzModRingElem}}, p::Param)
     function elem2elem(a)
         return sum(a.*[gen(p.R)^i for i = 0:length(a)-1])
     end 
     return elem2elem.(M)
+    # returns type Matrix{zzModPolyRingElem}
 end 
 end # module Dilithium
