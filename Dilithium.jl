@@ -83,7 +83,6 @@ function c_abs(e::zzModRingElem,p::Param)
 end 
 
 
-
 function power2rnd(r::Z, p::Param) where Z<:zzModRingElem
     mask = 2^p.d
     r0 = lift(r) % mask
@@ -98,11 +97,11 @@ function decompose(r::zzModRingElem, alpha, p::Param)
     r = lift(r) % p.q
     # centered residue sys
     (r0 <= div(alpha, 2)) || (r0 -= alpha)
-    if r - r0 == p.q - 1
+    if (r - r0) % p.q == p.q - 1
         r1 = 0
         r0 -= 1
     else
-        r1 = divexact(r - r0, alpha)
+        r1 = divexact((r - r0) % p.q , alpha)
     end
     return (r1, r0)
 end
@@ -125,12 +124,11 @@ function UseHint(h, r::Z, alpha, p)  where Z<:zzModRingElem
     p.q % alpha == 1 || @error "q != 1 mod alpha"
     m = divexact(p.q - 1, alpha)
     (r1,r0) = decompose(r,alpha,p)
-    if h == 1
-        if r0 > 0
-            return (r1 + 1) % m
-        else
-            return (r1 - 1) % m
-        end
+    if h && r0>0
+        return (r1 + 1) % m
+    end 
+    if h && r0<=0
+        return (r1 - 1 + m) % m
     end
     return r1
 end
@@ -203,7 +201,7 @@ function expandA(p::Param, s::Seed)
     Types = [UInt8, UInt16, UInt32, UInt32, UInt64, UInt64, UInt64, UInt64, UInt128, UInt128, UInt128, UInt128, UInt128, UInt128, UInt128, UInt128]
     Typ = Types[byte_number]
     mask = Typ(2)^(8 * byte_number) - 1  # 2^bitnumber -1
-    extract = reinterpret(Typ, shake256(s.a, UInt(64 * byte_number * p.n * p.k * p.l))) # estimated number of bytes needed for rejection sampling
+    extract = reinterpret(Typ, shake256(s.a, UInt(16 * byte_number * p.n * p.k * p.l))) # estimated number of bytes needed for rejection sampling
     read = 1
     ptr = pointer(extract)
     len = length(extract)

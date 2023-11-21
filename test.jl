@@ -12,12 +12,19 @@ using .Dilithium, Test, Nemo, .SHAK3
         # q = 8380417
         # q > 2α
         # 1 = q%α
-        alpha = 4092
-        alphahalf = 2046
+        alphahalf = gamma2 = 261888
+        alpha = gamma1 = 2*gamma2
+        #alpha = 4092
+        #alphahalf = 2046
         p = Dilithium.Param() 
         z = base_ring(p.R)(rand(Int)%alphahalf) # then abs(z) <= alphahalf
         r = base_ring(p.R)(rand(Int)%alpha)
         @test Dilithium.UseHint(Dilithium.MakeHint(z, r, alpha, p), r, alpha, p) == Dilithium.highbits(r+z, alpha, p)
+        if Dilithium.UseHint(Dilithium.MakeHint(z, r, alpha, p), r, alpha, p) != Dilithium.highbits(r+z, alpha, p)
+            println("failes:")
+            println(z)
+            println(r)
+        end 
     end 
 end
 
@@ -34,7 +41,7 @@ end
 
 @testset "conversion" begin
     for i = 1:10
-        p = Dilithium.Param(16, 7, 5, 7,2) 
+        p = Dilithium.Param() 
         A = Dilithium.KeyGen(p)[1].A
         @test Dilithium.array2ring(Dilithium.ring2array(A),p) == A
         @test Dilithium.array2ring(Dilithium.pad_matrix(Dilithium.ring2array(A),p),p) == A
