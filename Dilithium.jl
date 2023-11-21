@@ -11,6 +11,7 @@ struct Param
     k::Int
     l::Int
     eta::Int
+    d::Int
     R::zzModPolyRing       # R = ZZ/(q)ZZ
     mod::zzModPolyRingElem 
     seed::AbstractBytes
@@ -23,13 +24,13 @@ struct Seed
     # tr :: TODO
 end 
 
-function Param(n::Int = 256, q::Int = 8380417, k::Int = 5, l::Int = 7, eta::Int = 2, seed::AbstractBytes = b"bads33d") 
+function Param(n::Int = 256, q::Int = 8380417, k::Int = 5, l::Int = 7, eta::Int = 2, d::Int= 13, seed::AbstractBytes = b"bads33d") 
     ispow2(n)                               || @error "n is not a power of 2"
     isprime(q)                              || @error "q is not prime"
     (1 == q % (2 * n))                      || @warn "NTT not supported by this choice of parameters"
     R, x = PolynomialRing(ResidueRing(ZZ, q), "x")
     mod = (gen(R) ^ n + 1)
-    return Param(n, q, k, l, eta, R, mod, seed)
+    return Param(n, q, k, l, eta, d, R, mod, seed)
 end
 
 struct Pk{T<:zzModPolyRingElem}
@@ -43,6 +44,96 @@ struct Sk{T<:zzModPolyRingElem}
     s1::Matrix{T}
     s2::Matrix{T}
 end
+
+# compressed PK, SK structs
+# TODO define Matrix{Z} product, where the voeff vectors will be mul. per coeff
+struct compPk{T<:zzModPolyRingElem,Z<:Vector{zzModRingElem}}
+    A::Matrix{T}
+    t1::Matrix{Z}
+    tr#::AbstractBytes
+end
+
+struct compSk{T<:zzModPolyRingElem,Z<:Vector{zzModRingElem}}
+    A::Matrix{T}
+    tr#::AbstractBytes
+    s1::Matrix{T}
+    s2::Matrix{T}
+    t0::Matrix{Z}
+end
+
+function compress_key(sk::Sk)
+    # return compPk, compSk
+
+end 
+
+function c_abs(v::Z,p) where Z<:Vector{zzModRingElem}
+    return maximum(abs.(lift.(v).-p.q))  
+end 
+
+function power2rnd(a::Matrix{Z},p::Param) where Z<:Vector{zzModRingElem}
+    mask0 = 2^p.d
+    mask1 = mask0-1
+    mask2 = mask0 >> 1
+    function pow2rnd(r::Z)
+        function p2r(r)
+            r0 = lift(r) % mask1 # & 0xfff...
+            r =  lift(r) % p.q # should be done already
+            # return in symmetric system
+            (r0 <= div(p.q,2)) || (r0-=mask0)
+            return ((r-r0) >> p.d ,r0)
+        end 
+        return p2r.(r)
+    # return 
+    end
+    return pow2rnd.(a)
+end 
+
+function decompose(a::Matrix{Z},alpha,p::Param) where Z<:Vector{zzModRingElem}
+    function decomp(r::Z)
+        function dec(r)
+            r0 = lift(r) % alpha # & 0xfff...
+            r =  lift(r) % p.q # should be done already
+            (r0 <= div(alpha,2)) || (r0-=alpha)
+            if r-r0 == p.q-1
+                r1 = 0
+                r0-= 1
+            else 
+                r1 = divexact(r-r0,alpha)
+            end
+            return (r1,r0)
+        end 
+        return dec.(r)
+    end 
+    return decomp.(a)
+end 
+
+function lowbits(a::Matrix{Z},alpha,p::Param) where Z<:Vector{zzModRingElem}
+    return decompose(a,alpha,p)[1]
+end 
+
+function highbits(a::Matrix{Z},alpha,p::Param) where Z<:Vector{zzModRingElem}
+    return decompose(a,alpha,p)[2]
+end 
+
+function MakeHint(z,r,alpha,p)
+    #r1 = highbits(r,alpha,p)
+    #v1 = highbits(r+z,alpha,p)
+    return highbits(r,alpha,p).==highbits(r+z,alpha,p)
+end 
+
+function UseHint(h,r,alpha,p)
+    p.q%alpha == 1 || @error "q != 1 mod alpha"
+    m = divexact(p.q-1,alpha)
+    (r1,r0) = decompose(r,alpha,p)
+    if h == 1 
+        if r > 0 
+            return (r1+1)%m
+        else 
+            return (r1-1)%m
+        end 
+    end 
+    return r1 
+end 
 
 function KeyGen(p::Param = Param())
 
@@ -58,7 +149,7 @@ function KeyGen(p::Param = Param())
     return (pk, sk)
 end
 
-function pow2rnd(t,d)
+function pow2rnd(t, d, p)
 
 end 
 
@@ -116,7 +207,7 @@ function expandA(p::Param, s::Seed)
     Types =         [UInt8, UInt16, UInt32,  UInt32, UInt64, UInt64, UInt64, UInt64, UInt128, UInt128, UInt128, UInt128, UInt128, UInt128, UInt128, UInt128]
     Typ = Types[byte_number]
     mask = Typ(2)^(8*byte_number)-1  # 2^bitnumber -1
-    extract = reinterpret(Typ,shake256(s.a,UInt(16*byte_number*p.n*p.k*p.l))) # estimated number of bytes needed for rejection sampling
+    extract = reinterpret(Typ,shake256(s.a,UInt(64*byte_number*p.n*p.k*p.l))) # estimated number of bytes needed for rejection sampling
     read = 1
     ptr = pointer(extract)
     len = length(extract)
@@ -145,7 +236,7 @@ function expandS(p::Param, s::Seed)
     Types =         [UInt8, UInt16, UInt32,  UInt32, UInt64, UInt64, UInt64, UInt64, UInt128, UInt128, UInt128, UInt128, UInt128, UInt128, UInt128, UInt128]
     Typ = Types[byte_number]
     mask = Typ(2)^(Int(ceil(log2(2*p.eta+1))))-1  # bits needed to  2*η 
-    extract = reinterpret(Typ,shake128(s.s,UInt(16*byte_number*p.n*(p.k+p.l)))) # estimated number of bytes needed for rejection sampling
+    extract = reinterpret(Typ,shake128(s.s,UInt(64*byte_number*p.n*(p.k+p.l)))) # estimated number of bytes needed for rejection sampling
     read = 1
     ptr = pointer(extract)
     len = length(extract)
