@@ -66,65 +66,65 @@ function compress_key(sk::Sk)
 
 end
 
-function c_abs(v::Z, p) where {Z<:Vector{zzModRingElem}}
-    return maximum(abs.(lift.(v) .- p.q))
-end
 
-function power2rnd(a::Matrix{Z}, p::Param) where {Z<:Vector{zzModRingElem}}
-    mask0 = 2^p.d
-    mask1 = mask0 - 1
-    mask2 = mask0 >> 1
-    function pow2rnd(r::Z)
-        function p2r(r)
-            r0 = lift(r) % mask1 # & 0xfff...
-            r = lift(r) % p.q # should be done already
-            # return in symmetric system
-            (r0 <= div(p.q, 2)) || (r0 -= mask0)
-            return ((r - r0) >> p.d, r0)
-        end
-        return p2r.(r)
-        # return 
+function c_abs(v::Matrix{Z}, p::Param) where {Z<:Vector{zzModRingElem}}
+    function max(v::Z)
+        return maximum( abs.(lift.(v) - (lift.(v) .> div(p.q,2)).*p.q))
+    end 
+    return maximum(max.(v))
+end 
+
+function c_abs(e::zzModRingElem,p::Param)
+    if lift(e) > div(p.q,2)
+        return abs(lift(e)-p.q)
+    else 
+        return abs(lift(e))
     end
-    return pow2rnd.(a)
+end 
+
+
+
+function power2rnd(r::Z, p::Param) where Z<:zzModRingElem
+    mask = 2^p.d
+    r0 = lift(r) % mask
+    r = lift(r) % p.q
+    # centered residue sys
+    (r0 <= div(p.q, 2)) || (r0 -= mask)
+    return ((r - r0) >> p.d, r0)
 end
 
-function decompose(a::Matrix{Z}, alpha, p::Param) where {Z<:Vector{zzModRingElem}}
-    function decomp(r::Z)
-        function dec(r)
-            r0 = lift(r) % alpha # & 0xfff...
-            r = lift(r) % p.q # should be done already
-            (r0 <= div(alpha, 2)) || (r0 -= alpha)
-            if r - r0 == p.q - 1
-                r1 = 0
-                r0 -= 1
-            else
-                r1 = divexact(r - r0, alpha)
-            end
-            return (r1, r0)
-        end
-        return dec.(r)
+function decompose(r::zzModRingElem, alpha, p::Param)
+    r0 = lift(r) % alpha 
+    r = lift(r) % p.q
+    # centered residue sys
+    (r0 <= div(alpha, 2)) || (r0 -= alpha)
+    if r - r0 == p.q - 1
+        r1 = 0
+        r0 -= 1
+    else
+        r1 = divexact(r - r0, alpha)
     end
-    return decomp.(a)
+    return (r1, r0)
 end
 
-function lowbits(a::Matrix{Z}, alpha, p::Param) where {Z<:Vector{zzModRingElem}}
-    return decompose(a, alpha, p)[1]
+#TODO move alpha into param !! 
+
+function highbits(r::Z, alpha, p::Param) where Z<:zzModRingElem
+    return decompose(r, alpha, p)[1]
 end
 
-function highbits(a::Matrix{Z}, alpha, p::Param) where {Z<:Vector{zzModRingElem}}
-    return decompose(a, alpha, p)[2]
+function lowbits(r::Z, alpha, p::Param) where Z<:zzModRingElem
+    return decompose(r, alpha, p)[2]
 end
 
 function MakeHint(z, r, alpha, p)
-    #r1 = highbits(r,alpha,p)
-    #v1 = highbits(r+z,alpha,p)
-    return highbits(r, alpha, p) .== highbits(r + z, alpha, p)
+    return highbits(r,alpha,p) != highbits(r+z,alpha,p)
 end
 
-function UseHint(h, r, alpha, p)
+function UseHint(h, r::Z, alpha, p)  where Z<:zzModRingElem
     p.q % alpha == 1 || @error "q != 1 mod alpha"
     m = divexact(p.q - 1, alpha)
-    (r1, r0) = decompose(r, alpha, p)
+    (r1,r0) = decompose(r,alpha,p)
     if h == 1
         if r0 > 0
             return (r1 + 1) % m
@@ -147,10 +147,6 @@ function KeyGen(p::Param=Param())
     sk = Sk(A, t, s1, s2)
 
     return (pk, sk)
-end
-
-function pow2rnd(t, d, p)
-
 end
 
 """
