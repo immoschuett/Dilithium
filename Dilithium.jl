@@ -126,7 +126,7 @@ function UseHint(h,r,alpha,p)
     m = divexact(p.q-1,alpha)
     (r1,r0) = decompose(r,alpha,p)
     if h == 1 
-        if r > 0 
+        if r0 > 0 
             return (r1+1)%m
         else 
             return (r1-1)%m
