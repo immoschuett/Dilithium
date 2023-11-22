@@ -44,7 +44,7 @@ struct Signature
     h::BitArray{3}
 end
 
-function Param(n::Int=256, q::Int=8380417, k::Int=4, l::Int=4, eta::Int=2, gamma1::Int=2^17, gamma2::Int=divexact(8380416, 88), tau::Int=39, omega::Int=80, d::Int=13, seed::AbstractBytes=b"bads33d")
+function Param(n::Int=256, q::Int=8380417, k::Int=4, l::Int=4, eta::Int=2, gamma1::Int=2^17, gamma2::Int=divexact(8380416, 88), tau::Int=39, omega::Int=80, d::Int=13, seed::AbstractBytes=b"bads33d")::Param
     ispow2(n) || @error "n is not a power of 2"
     isprime(q) || @error "q is not prime"
     (1 == q % (2 * n)) || @warn "NTT not supported by this choice of parameters"
@@ -63,7 +63,7 @@ const LV3 = Param(256, 8380417, 6, 5, 4, 2^19, divexact(8380416, 32), 49, 55)
 
 const LV5 = Param(256, 8380417, 6, 5, 2, 2^19, divexact(8380416, 32), 60, 75)
 
-function KeyGen(p::Param=Param())
+function KeyGen(p::Param=Param())::Tuple{PublicKey, SecretKey}
     BR = base_ring(p.R)
 
     A = rand(BR, p.k, p.l, p.n)
@@ -84,7 +84,7 @@ function KeyGen(p::Param=Param())
     return (PublicKey(A, t1, tr), SecretKey(A, tr, s1, s2, t0))
 end
 
-function Sign(sk::SecretKey, m::AbstractBytes, p::Param)
+function Sign(sk::SecretKey, m::AbstractBytes, p::Param)::Signature
     BR = base_ring(p.R)
     mu = shake256(vcat(sk.tr, m), UInt(64))
     c0 = undef
@@ -111,7 +111,7 @@ function Sign(sk::SecretKey, m::AbstractBytes, p::Param)
     return Signature(c0, z, h)
 end
 
-function Vrfy(pk::PublicKey, m::AbstractBytes, sig::Signature, p::Param)
+function Vrfy(pk::PublicKey, m::AbstractBytes, sig::Signature, p::Param)::Bool
     mu = shake256(vcat(pk.tr, m), UInt(64))
     c = sampleinball(sig.c0, p)
     w1 = UseHint(sig.h, (pk.A * sig.z - ((pk.t1 .* c) .* (2^p.d))) .% p.mod, p)
@@ -128,26 +128,20 @@ end
     returns  M::Array{Nemo.zzModRingElem},3}, it converts ring element of M[i,j] into a 3 dimensional Array C of coefficients.
     Where C[i,j,k] belongs to the k-th coefficient of the polynomial in M[i,j]. low k belong to low degree coefficients and high k to the highes degree coefficient.
 """
-function ring2array(M::Matrix{zzModPolyRingElem}, p::Param)
+function ring2array(M::Matrix{T}, p::Param)::Array{Z, 3}
     (a, b) = size(M)
     padded = pad_matrix(collect.(coefficients.(M)), p)
     return [padded[i, j][k] for i = 1:a, j = 1:b, k = 1:p.n]
-    # returns type Matrix{Vector{Nemo.zzModRingElem}}
 end
 
-function pad_matrix(M::Matrix{Vector{Nemo.zzModRingElem}}, p::Param)
+function pad_matrix(M::Matrix{Vector{Z}}, p::Param)::Matrix{Vector{Z}}
     function padvec(v)
         return vcat(v, zeros(base_ring(p.R), p.n - length(v)))
     end
     return padvec.(M)
-    # returns type Matrix{Vector{Nemo.zzModRingElem}}
 end
-"""
-        array2ring(M::Array{Nemo.zzModRingElem,3}, p::Param)
 
-    returns  M::Matrix{zzModPolyRingElem}, it converts the Array containing the coefficient vectors to a Matrix of ring elements in p.R
-"""
-function array2ring(M::Array{Z, 3}, p::Param)
+function array2ring(M::Array{Z, 3}, p::Param)::Matrix{T}
     (a, b) = size(M)
     M2 = zeros(p.R, a, b)
     function elem2elem(a)
@@ -157,7 +151,6 @@ function array2ring(M::Array{Z, 3}, p::Param)
         M2[i, j] = elem2elem(M[i, j, :])
     end
     return M2
-    # returns type Matrix{zzModPolyRingElem}
 end
 
 # Functions for ZZRingElem
