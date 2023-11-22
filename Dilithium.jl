@@ -12,16 +12,16 @@ struct Param
     q::Int
     k::Int
     l::Int
-    eta::Int
-    gamma1::Int
-    gamma2::Int
-    tau::Int
-    beta::Int
-    omega::Int
+    eta::Int                # η
+    gamma1::Int             # γ_1
+    gamma2::Int             # γ_2
+    tau::Int                # τ
+    beta::Int               # β
+    omega::Int              # ω
     d::Int
-    R::zzModPolyRing       # R = ZZ/(q)ZZ
+    R::zzModPolyRing        # R = ZZ/(q)ZZ (x)
     mod::zzModPolyRingElem
-    seed::AbstractBytes
+    seed::AbstractBytes     # ρ'
 end
 
 struct PublicKey
@@ -39,12 +39,12 @@ struct SecretKey
 end
 
 struct Signature
-    c0::Array{UInt8, 1}
+    c0::Array{UInt8,1}
     z::Matrix{T}
     h::BitArray{3}
 end
 
-function Param(n::Int=256, q::Int=8380417, k::Int=4, l::Int=4, eta::Int=2, gamma1::Int=2^17, gamma2::Int=divexact(8380416, 88), tau::Int=39, omega::Int=80, d::Int=13, seed::AbstractBytes=b"bads33d")::Param
+function Param(; n::Int=256, q::Int=8380417, k::Int=4, l::Int=4, eta::Int=2, gamma1::Int=2^17, gamma2::Int=divexact(8380416, 88), tau::Int=39, omega::Int=80, d::Int=13, seed::AbstractBytes=b"bads33d")::Param
     ispow2(n) || @error "n is not a power of 2"
     isprime(q) || @error "q is not prime"
     (1 == q % (2 * n)) || @warn "NTT not supported by this choice of parameters"
@@ -56,14 +56,13 @@ function Param(n::Int=256, q::Int=8380417, k::Int=4, l::Int=4, eta::Int=2, gamma
 end
 
 # NIST SECURITY LVL
-
 const LV2 = Param()
 
-const LV3 = Param(256, 8380417, 6, 5, 4, 2^19, divexact(8380416, 32), 49, 55)
+const LV3 = Param(n=256, q=8380417, k=6, l=5, eta=4, gamma1=2^19, gamma2=divexact(8380416, 32), tau=49, omega=55)
 
-const LV5 = Param(256, 8380417, 6, 5, 2, 2^19, divexact(8380416, 32), 60, 75)
+const LV5 = Param(n=256, q=8380417, k=6, l=5, eta=2, gamma1=2^19, gamma2=divexact(8380416, 32), tau=60, omega=75)
 
-function KeyGen(p::Param=Param())::Tuple{PublicKey, SecretKey}
+function KeyGen(p::Param=Param())::Tuple{PublicKey,SecretKey}
     BR = base_ring(p.R)
 
     A = rand(BR, p.k, p.l, p.n)
@@ -88,8 +87,8 @@ function Sign(sk::SecretKey, m::AbstractBytes, p::Param)::Signature
     BR = base_ring(p.R)
     mu = shake256(vcat(sk.tr, m), UInt(64))
     c0 = undef
-    z, h = [], []
-    while z == [] && h == []
+    z, h = undef, undef
+    while z == undef && h == undef
         # return y in S_gamma1 ^ l 
         y = array2ring(BR.(rand(-p.gamma1:p.gamma1, p.l, 1, p.n)), p)
         w = (sk.A * y) .% p.mod
@@ -100,11 +99,11 @@ function Sign(sk::SecretKey, m::AbstractBytes, p::Param)::Signature
         r0 = LowBits((w .- (sk.s2 .* c)) .% p.mod, p)
         # note Low,Higbits return ZZRingElem in centered representation
         if ((c_abs(z, p) >= (p.gamma1 - p.beta))) | ((c_abs_z(r0) >= (p.gamma2 - p.beta)))
-            z, h = [], []
+            z, h = undef, undef
         else
             h = MakeHint((sk.t0 .* (c * (-1))) .% p.mod, (w - sk.s2 .* c + sk.t0 .* c) .% p.mod, p)
             if (c_abs((sk.t0 .* c) .% p.mod, p) >= p.gamma2) | (sum(h) > p.omega)
-                z, h = [], []
+                z, h = undef, undef
             end
         end
     end
@@ -116,9 +115,9 @@ function Vrfy(pk::PublicKey, m::AbstractBytes, sig::Signature, p::Param)::Bool
     c = sampleinball(sig.c0, p)
     w1 = UseHint(sig.h, (pk.A * sig.z - ((pk.t1 .* c) .* (2^p.d))) .% p.mod, p)
 
-    return (c_abs(sig.z, p) < (p.gamma1 - p.beta) && 
-           (sum(sig.h) <= p.omega) && 
-           (sig.c0 == shake256(vcat(mu, UInt8.(reshape(w1, p.k * p.n))), UInt(32))))
+    return (c_abs(sig.z, p) < (p.gamma1 - p.beta) &&
+            (sum(sig.h) <= p.omega) &&
+            (sig.c0 == shake256(vcat(mu, UInt8.(reshape(w1, p.k * p.n))), UInt(32))))
 end
 
 
@@ -128,7 +127,7 @@ end
     returns  M::Array{Nemo.zzModRingElem},3}, it converts ring element of M[i,j] into a 3 dimensional Array C of coefficients.
     Where C[i,j,k] belongs to the k-th coefficient of the polynomial in M[i,j]. low k belong to low degree coefficients and high k to the highes degree coefficient.
 """
-function ring2array(M::Matrix{T}, p::Param)::Array{Z, 3}
+function ring2array(M::Matrix{T}, p::Param)::Array{Z,3}
     (a, b) = size(M)
     padded = pad_matrix(collect.(coefficients.(M)), p)
     return [padded[i, j][k] for i = 1:a, j = 1:b, k = 1:p.n]
@@ -141,7 +140,7 @@ function pad_matrix(M::Matrix{Vector{Z}}, p::Param)::Matrix{Vector{Z}}
     return padvec.(M)
 end
 
-function array2ring(M::Array{Z, 3}, p::Param)::Matrix{T}
+function array2ring(M::Array{Z,3}, p::Param)::Matrix{T}
     (a, b) = size(M)
     M2 = zeros(p.R, a, b)
     function elem2elem(a)
@@ -264,24 +263,24 @@ function sampleinball(rho::AbstractBytes, p::Param)
     rand_bytes = [extract_byte(ctx) for _ = 1:8]
 
     @assert(p.tau <= 64)
-    sign_bits = vcat(digits.(rand_bytes, base = 2, pad = 8)...)[1:p.tau]
+    sign_bits = vcat(digits.(rand_bytes, base=2, pad=8)...)[1:p.tau]
     c = zeros(Int, 256)
 
-    for i = 256 - p.tau : 255
+    for i = 256-p.tau:255
         j = extract_byte(ctx)
         while j > i
             j = extract_byte(ctx)
         end
 
-        s = sign_bits[i - (256 - p.tau) + 1]
+        s = sign_bits[i-(256-p.tau)+1]
 
-        c[i + 1] = c[j + 1]
-        c[j + 1] = (-1) ^ s
+        c[i+1] = c[j+1]
+        c[j+1] = (-1)^s
     end
 
     # ensure we generate only valid c with 
     @assert(sum(c .!= 0) == p.tau)
 
     return sum(c .* [gen(p.R)^i for i = 0:p.n-1])
-  end
+end
 end # module Dilithium

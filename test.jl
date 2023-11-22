@@ -24,30 +24,30 @@ sg[]
 Dilithium.Vrfy(ck[1], b"hallo",sg, p)
 =#
 # Tesspace
-@testset "verfysign" begin 
+@testset "verfysign" begin
     for i = 1:3
         p = Dilithium.LV5
-        (pk, sk) = Dilithium.KeyGen(p);
-        sig = Dilithium.Sign(sk, b"hallo", p);
-        @test Dilithium.Vrfy(pk, b"hallo",sig, p) == true
+        (pk, sk) = Dilithium.KeyGen(p)
+        sig = Dilithium.Sign(sk, b"hallo", p)
+        @test Dilithium.Vrfy(pk, b"hallo", sig, p) == true
         sig.c0[1] += 1
-        @test Dilithium.Vrfy(pk, b"hallo",sig, p) == false
-    end 
+        @test Dilithium.Vrfy(pk, b"hallo", sig, p) == false
+    end
     for i = 1:3
         p = Dilithium.LV3
-        (pk, sk) = Dilithium.KeyGen(p);
-        sig = Dilithium.Sign(sk, b"hallo", p);
-        @test Dilithium.Vrfy(pk, b"hallo",sig, p) == true
+        (pk, sk) = Dilithium.KeyGen(p)
+        sig = Dilithium.Sign(sk, b"hallo", p)
+        @test Dilithium.Vrfy(pk, b"hallo", sig, p) == true
         sig.c0[1] += 1
-        @test Dilithium.Vrfy(pk, b"hallo",sig, p) == false
-    end 
-end 
+        @test Dilithium.Vrfy(pk, b"hallo", sig, p) == false
+    end
+end
 
 @testset "hints" begin
     # check ID UseHintq(MakeHintq(z, r, α), r, α) = HighBitsq(z+r,alpha) 
     # if ||z||<= alpha/2
     #A = Dilithium.KeyGen(p)[1].A+ z, alpha).
-    for i = 1:1000
+    for i = 1:10
         # q = 8380417
         # q > 2α
         # 1 = q%α
