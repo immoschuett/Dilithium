@@ -38,17 +38,17 @@ struct Sk
 end
 # compressed PK, SK structs 
 struct compPk
-    A::Array{Z,3}
-    t1::Array{Z,3}
-    tr#::AbstractBytes
+    A::Matrix{T}
+    t1::Matrix{T}
+    tr::AbstractBytes
 end
 
 struct compSk
-    A::Array{Z,3}
-    tr#::AbstractBytes
-    s1::Array{Z,3}
-    s2::Array{Z,3}
-    t0::Array{Z,3}
+    A::Matrix{T}
+    tr::AbstractBytes
+    s1::Matrix{T}
+    s2::Matrix{T}
+    t0::Matrix{T}
 end
 
 function Param(n::Int=256, q::Int=8380417, k::Int=4, l::Int=4, eta::Int=2, gamma1::Int=2^17, gamma2::Int=divexact(8380416, 88), tau::Int=39, omega::Int=80, d::Int=13, seed::AbstractBytes=b"bads33d")
@@ -92,30 +92,29 @@ end
 
 function compress_key(sk::Sk, p::Param)
     # return compPk, compSk
-    t1 = power2left.(ring2array(sk.t, p), Ref(p))
-    t0 = power2right.(ring2array(sk.t, p), Ref(p))
-    tr = SHAK3.shake256(vcat(p.seed, p.seed), UInt(32))
-    return (compPk(ring2array(sk.A, p), t1, tr), compSk(ring2array(sk.A, p), tr, ring2array(sk.s1, p), ring2array(sk.s2, p), t0))
+    t1 = array2ring(power2left.(ring2array(sk.t, p), Ref(p)), p)
+    t0 = array2ring(power2right.(ring2array(sk.t, p), Ref(p)), p)
+    tr = shake256(vcat(p.seed, p.seed), UInt(32))
+    return (compPk(sk.A, t1, tr), compSk(sk.A, tr, sk.s1, sk.s2, t0))
 end
 
 function Sign(csk::compSk, p::Param, m::AbstractBytes)
 
     BR = base_ring(p.R)
-    A = array2ring(csk.A, p)
-    s1 = array2ring(csk.s1, p)
-    s2 = array2ring(csk.s2, p)
-    t0 = array2ring(csk.t0, p)
-    mu = SHAK3.shake256(vcat(csk.tr, m), UInt(64))
-    c0 = SHAK3.shake256(b"", UInt(32))
+    A =  csk.A
+    s1 = csk.s1
+    s2 = csk.s2
+    t0 = csk.t0
+    mu = shake256(vcat(csk.tr, m), UInt(64))
+    c0 = undef
     z, h = [], []
     while z == [] && h == []
         # return y in S_gamma1 ^ l 
         y = array2ring(BR.(rand(-p.gamma1:p.gamma1, p.l, 1, p.n)), p)
         w = (A * y) .% p.mod
         w1 = HighBits(w, p)
-        w12 = UInt8.(reshape(w1, p.k * p.n))
-        c0 = SHAK3.shake256(vcat(mu, w12), UInt(32))
-        c = sampletoball(c0, p)
+        c0 = shake256(vcat(mu, UInt8.(reshape(w1, p.k * p.n))), UInt(32))
+        c = sampleinball(c0, p)
         z = (y + (s1 .* c)) .% p.mod
         r0 = LowBits((w .- (s2 .* c)) .% p.mod, p)
         # note Low,Higbits return ZZRingElem in centered representation
@@ -135,14 +134,15 @@ function Vrfy(cpk::compPk, m::AbstractBytes, sg, p)
     c0 = sg[1]
     z = sg[2]
     h = sg[3]
-    A = array2ring(cpk.A, p)
-    t1 = array2ring(cpk.t1, p)
-    mu = SHAK3.shake256(vcat(cpk.tr, m), UInt(64))
-    c = sampletoball(c0, p)
+    A = cpk.A
+    t1 = cpk.t1
+    mu = shake256(vcat(cpk.tr, m), UInt(64))
+    c = sampleinball(c0, p)
     w1 = UseHint(h, (A * z - ((t1 .* c) .* (2^p.d))) .% p.mod, p)
-    w12 = UInt8.(reshape(w1, p.k * p.n))
 
-    return (c_abs(z, p) < (p.gamma1 - p.beta) && (sum(h) <= p.omega) && (c0 == SHAK3.shake256(vcat(mu, w12), UInt(32))))
+    return (c_abs(z, p) < (p.gamma1 - p.beta) && 
+           (sum(h) <= p.omega) && 
+           (c0 == shake256(vcat(mu, UInt8.(reshape(w1, p.k * p.n))), UInt(32))))
 end
 
 
@@ -279,20 +279,30 @@ function c_abs(e::Matrix{T}, p)
 end
 
 # additional functions
+function sampleinball(rho::AbstractBytes, p::Param)
+    ctx = SHAKEByteExtractor(SHAKE_256_CTX(), rho)
 
-function sampletoball(rho::AbstractBytes, p::Param)
-    # TODO    use shake here to extract bits as in spezification !!!
-    hash = reinterpret(Int, rho) # ! change this in release
-    c = vcat(zeros(Int, p.n - p.tau), rand(MersenneTwister(abs(hash[1])), [-1, 1], p.tau))
-    shuffle!(MersenneTwister(abs(hash[1])), c)
-    # now we have a vector with  (p.n)  entries, tau +- 1
-    c = base_ring(p.R).(c)
-    # return polynomial of the vector 
-    #(an element)
+    rand_bytes = [extract_byte(ctx) for _ = 1:8]
+
+    @assert(p.tau <= 64)
+    sign_bits = vcat(digits.(rand_bytes, base = 2, pad = 8)...)[1:p.tau]
+    c = zeros(Int, 256)
+
+    for i = 256 - p.tau : 255
+        j = extract_byte(ctx)
+        while j > i
+            j = extract_byte(ctx)
+        end
+
+        s = sign_bits[i - (256 - p.tau) + 1]
+
+        c[i + 1] = c[j + 1]
+        c[j + 1] = (-1) ^ s
+    end
+
+    # ensure we generate only valid c with 
+    @assert(sum(c .!= 0) == p.tau)
+
     return sum(c .* [gen(p.R)^i for i = 0:p.n-1])
-end
-
-
-
-
+  end
 end # module Dilithium

@@ -1,5 +1,5 @@
 module SHAK3
-export shake128,shake256
+export shake128,shake256,SHAKEByteExtractor,extract_byte,SHAKE_256_CTX
 
 # SHA structures
 abstract type SHAKE end
@@ -187,6 +187,34 @@ function shake256(data::AbstractBytes,d::UInt)
     p = pointer(M)
     digest!(ctx,d,p)
     return M
+end
+
+
+mutable struct SHAKEByteExtractor{T <: SHAKE}
+    shake::T
+    buffer::Array{UInt8, 1}
+    extracted::UInt
+end
+
+function SHAKEByteExtractor(ctx::T, data::AbstractBytes) where {T <: SHAKE}
+    update!(ctx, data)
+    buffer = Array{UInt8, 1}(undef, blocklen(T))
+    digest!(ctx, blocklen(T), pointer(buffer))
+    ctx.used = true
+
+    SHAKEByteExtractor(ctx, buffer, UInt(1))
+end
+
+function extract_byte(ctx::SHAKEByteExtractor)
+    byte = ctx.buffer[ctx.extracted]
+
+    ctx.extracted += 1
+    if ctx.extracted > 136
+        digest!(ctx.shake, 136, pointer(buffer))
+        ctx.extracted = 1
+    end
+
+    return byte
 end
 
 end # module

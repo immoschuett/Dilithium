@@ -3,7 +3,6 @@ include("Shake/shake.jl")
 using .Dilithium, Test, Nemo, .SHAK3, Random
 
 
-# TODO change sampletoball accortding the std
 # TODO adjust hashing
 # ! TODO LIST longterm
 # TODO use NTT, 
@@ -85,9 +84,6 @@ end
         A = Dilithium.KeyGen(p)[1].A
         @test Dilithium.array2ring(Dilithium.ring2array(A, p), p) == A
         @test Dilithium.array2ring(Dilithium.ring2array(zeros(p.R, 5, 7), p), p) == zeros(p.R, 5, 7)
-        p = Dilithium.Param(16, 3, 3)
-        A = Dilithium.KeyGen(p)[1].A
-        #@test Dilithium.array2ring(Dilithium.ring2array(A,p),p) == A
     end
     # why error here?
 end
