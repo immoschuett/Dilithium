@@ -4,6 +4,8 @@ include("Shake/shake.jl")
 using Nemo, Random, .SHAK3
 
 const AbstractBytes = Union{AbstractVector{UInt8},NTuple{N,UInt8} where N}
+const Z = zzModRingElem
+const T = zzModPolyRingElem
 
 struct Param
     n::Int
@@ -12,20 +14,22 @@ struct Param
     l::Int
     eta::Int
     gamma1::Int
+    gamma2::Int
     tau::Int
     beta::Int
+    omega::Int
     d::Int
     R::zzModPolyRing       # R = ZZ/(q)ZZ
     mod::zzModPolyRingElem
     seed::AbstractBytes
 end
 
-struct Pk{T<:zzModPolyRingElem}
+struct Pk
     A::Matrix{T}
     t::Matrix{T}
 end
 
-struct Sk{T<:zzModPolyRingElem}
+struct Sk
     # use 3-dimensional arrays 
     A::Matrix{T}
     t::Matrix{T}
@@ -33,28 +37,38 @@ struct Sk{T<:zzModPolyRingElem}
     s2::Matrix{T}
 end
 # compressed PK, SK structs 
-struct compPk{E<:zzModRingElem}
-    A::Array{E,3}
-    t1::Array{E,3}
+struct compPk
+    A::Array{Z,3}
+    t1::Array{Z,3}
     tr#::AbstractBytes
 end
 
-struct compSk{E<:zzModRingElem}
-    A::Array{E,3}
+struct compSk
+    A::Array{Z,3}
     tr#::AbstractBytes
-    s1::Array{E,3}
-    s2::Array{E,3}
-    t0::Array{E,3}
+    s1::Array{Z,3}
+    s2::Array{Z,3}
+    t0::Array{Z,3}
 end
 
-function Param(n::Int=256, q::Int=8380417, k::Int=5, l::Int=7, eta::Int=2, gamma1::Int = 2^17, tau::Int=39, beta::Int=78 , d::Int=13, seed::AbstractBytes=b"bads33d")
-    ispow2(n)           || @error "n is not a power of 2"
-    isprime(q)          || @error "q is not prime"
-    (1 == q % (2 * n))  || @warn "NTT not supported by this choice of parameters"
+function Param(n::Int=256, q::Int=8380417, k::Int=4, l::Int=4, eta::Int=2, gamma1::Int=2^17, gamma2::Int=divexact(8380416, 88), tau::Int=39, omega::Int=80, d::Int=13, seed::AbstractBytes=b"bads33d")
+    ispow2(n) || @error "n is not a power of 2"
+    isprime(q) || @error "q is not prime"
+    (1 == q % (2 * n)) || @warn "NTT not supported by this choice of parameters"
+    tau <= n || @error "tau > n"
     R, _ = PolynomialRing(ResidueRing(ZZ, q), "x")
     mod = (gen(R)^n + 1)
-    return Param(n, q, k, l, eta, gamma1, tau, beta, d, R, mod, seed)
+    beta = 2 * tau
+    return Param(n, q, k, l, eta, gamma1, gamma2, tau, beta, omega, d, R, mod, seed)
 end
+
+# NIST SECURITY LVL
+
+const LV2 = Param()
+
+const LV3 = Param(256, 8380417, 6, 5, 4, 2^19, divexact(8380416, 32), 49, 55)
+
+const LV5 = Param(256, 8380417, 6, 5, 2, 2^19, divexact(8380416, 32), 60, 75)
 
 function KeyGen(p::Param=Param())
     BR = base_ring(p.R)
@@ -84,41 +98,52 @@ function compress_key(sk::Sk, p::Param)
     return (compPk(ring2array(sk.A, p), t1, tr), compSk(ring2array(sk.A, p), tr, ring2array(sk.s1, p), ring2array(sk.s2, p), t0))
 end
 
-
-
 function Sign(csk::compSk, p::Param, m::AbstractBytes)
 
     BR = base_ring(p.R)
-    A = array2ring(csk.A,p)
-    s1 = array2ring(csk.s1,p)
-    s2 = array2ring(csk.s2,p)
+    A = array2ring(csk.A, p)
+    s1 = array2ring(csk.s1, p)
+    s2 = array2ring(csk.s2, p)
+    t0 = array2ring(csk.t0, p)
     mu = SHAK3.shake256(vcat(csk.tr, m), UInt(64))
+    c0 = SHAK3.shake256(b"", UInt(32))
     z, h = [], []
     while z == [] && h == []
-        y = array2ring(BR.(rand(0:(2*p.gamma1 -1), p.l, 1, p.n)),p)
-        w = A * y .% p.mod
-        w = ring2array(w,p)
-        w1 = highbits.(w, Ref(gamma1))
-        # TODO reshape to Vector UInt8
-        w1 = reinterpret(UInt8,reshape(w1,p.k*p.n))
-        c = SHAK3.shake256(vcat(mu,w1),UInt(32))
-        c = sampletoball(c,p)
-
-        z = y+(s1.*c) .% p.mod 
-        r0 = lowbits.((w - (s2.*c)) .% p.mod , Ref(gamma1))
-        if (c_abs(z,p) >= (p.gamma1 - p.beta)) || (c_abs(r0,p) >= (p.gamma1 - p.beta)) 
-
-        else 
-            h = MakeHint
-        end 
+        # return y in S_gamma1 ^ l 
+        y = array2ring(BR.(rand(-p.gamma1:p.gamma1, p.l, 1, p.n)), p)
+        w = (A * y) .% p.mod
+        w1 = HighBits(w, p)
+        w12 = UInt8.(reshape(w1, p.k * p.n))
+        c0 = SHAK3.shake256(vcat(mu, w12), UInt(32))
+        c = sampletoball(c0, p)
+        z = (y + (s1 .* c)) .% p.mod
+        r0 = LowBits((w .- (s2 .* c)) .% p.mod, p)
+        # note Low,Higbits return ZZRingElem in centered representation
+        if ((c_abs(z, p) >= (p.gamma1 - p.beta))) | ((c_abs_z(r0) >= (p.gamma2 - p.beta)))
+            z, h = [], []
+        else
+            h = MakeHint((t0 .* (c * (-1))) .% p.mod, (w - s2 .* c + t0 .* c) .% p.mod, p)
+            if (c_abs((t0 .* c) .% p.mod, p) >= p.gamma2) | (sum(h) > p.omega)
+                z, h = [], []
+            end
+        end
     end
+    return (c0, z, h)
 end
 
-function Vrfy()
+function Vrfy(cpk::compPk, m::AbstractBytes, sg, p)
+    c0 = sg[1]
+    z = sg[2]
+    h = sg[3]
+    A = array2ring(cpk.A, p)
+    t1 = array2ring(cpk.t1, p)
+    mu = SHAK3.shake256(vcat(cpk.tr, m), UInt(64))
+    c = sampletoball(c0, p)
+    w1 = UseHint(h, (A * z - ((t1 .* c) .* (2^p.d))) .% p.mod, p)
+    w12 = UInt8.(reshape(w1, p.k * p.n))
+
+    return (c_abs(z, p) < (p.gamma1 - p.beta) && (sum(h) <= p.omega) && (c0 == SHAK3.shake256(vcat(mu, w12), UInt(32))))
 end
-
-
-
 
 
 """
@@ -159,19 +184,21 @@ function array2ring(M, p::Param)
     # returns type Matrix{zzModPolyRingElem}
 end
 
-function c_max(e::Z, p::Param) where {Z<:zzModRingElem}
+# Functions for ZZRingElem
+function c_abs_z(e::Array{ZZRingElem})
+    return maximum(abs.(e))
+end
+
+# Functions for Z::zzModRingElem
+function c_max(e::Z, p::Param)
     if lift(e) > div(p.q, 2)
         return abs(lift(e) - p.q)
     else
         return abs(lift(e))
     end
 end
-function c_abs(e,p)
-    return c_max.(ring2array(e,p),Ref(p))
-end 
-
 # obsolet (splitted in left an right)
-function power2rnd(r::Z, p::Param) where {Z<:zzModRingElem}
+function power2rnd(r::Z, p::Param)
     mask = 2^p.d
     r0 = lift(r) % mask
     r = lift(r) % p.q
@@ -179,8 +206,7 @@ function power2rnd(r::Z, p::Param) where {Z<:zzModRingElem}
     (r0 <= div(p.q, 2)) || (r0 -= mask)
     return (base_ring(p.R)((r - r0) >> p.d), base_ring(p.R)(r0))
 end
-
-function power2left(r::Z, p::Param) where {Z<:zzModRingElem}
+function power2left(r::Z, p::Param)
     mask = 2^p.d
     r0 = lift(r) % mask
     r = lift(r) % p.q
@@ -188,16 +214,14 @@ function power2left(r::Z, p::Param) where {Z<:zzModRingElem}
     (r0 <= div(p.q, 2)) || (r0 -= mask)
     return base_ring(p.R)((r - r0) >> p.d)
 end
-
-function power2right(r::Z, p::Param) where {Z<:zzModRingElem}
+function power2right(r::Z, p::Param)
     mask = 2^p.d
     r0 = lift(r) % mask
     # centered residue sys
     (r0 <= div(p.q, 2)) || (r0 -= mask)
     return base_ring(p.R)(r0)
 end
-
-function decompose(r::Z, alpha, p::Param) where {Z<:zzModRingElem}
+function decompose(r::Z, alpha, p::Param)
     r0 = lift(r) % alpha
     r = lift(r) % p.q
     # centered residue sys
@@ -210,22 +234,16 @@ function decompose(r::Z, alpha, p::Param) where {Z<:zzModRingElem}
     end
     return (r1, r0)
 end
-
-#TODO move alpha into param !! 
-
-function highbits(r::Z, alpha, p::Param) where {Z<:zzModRingElem}
+function highbits(r::Z, alpha, p::Param)
     return decompose(r, alpha, p)[1]
 end
-
-function lowbits(r::Z, alpha, p::Param) where {Z<:zzModRingElem}
+function lowbits(r::Z, alpha, p::Param)
     return decompose(r, alpha, p)[2]
 end
-
-function makehint(z, r::Z, alpha, p) where {Z<:zzModRingElem}
+function makehint(z::Z, r::Z, alpha, p)
     return highbits(r, alpha, p) != highbits(r + z, alpha, p)
 end
-
-function usehint(h, r::Z, alpha, p) where {Z<:zzModRingElem}
+function usehint(h, r::Z, alpha, p)
     p.q % alpha == 1 || @error "q != 1 mod alpha"
     m = divexact(p.q - 1, alpha)
     (r1, r0) = decompose(r, alpha, p)
@@ -238,18 +256,43 @@ function usehint(h, r::Z, alpha, p) where {Z<:zzModRingElem}
     return r1
 end
 
+# Functions for T::zzModPolyRingElem
+function MakeHint(z::Matrix{T}, r::Matrix{T}, p)
+    z = ring2array(z, p)
+    r = ring2array(r, p)
+    return makehint.(z, r, Ref(2 * p.gamma2), Ref(p))
+end
+function UseHint(h, r::Matrix{T}, p)
+    r = ring2array(r, p)
+    return usehint.(h, r, Ref(2 * p.gamma2), Ref(p))
+end
+function HighBits(r::Matrix{T}, p)
+    r = ring2array(r, p)
+    return highbits.(r, Ref(2 * p.gamma2), Ref(p))
+end
+function LowBits(r::Matrix{T}, p)
+    r = ring2array(r, p)
+    return lowbits.(r, Ref(2 * p.gamma2), Ref(p))
+end
+function c_abs(e::Matrix{T}, p)
+    return maximum(c_max.(ring2array(e, p), Ref(p)))
+end
+
+# additional functions
+
 function sampletoball(rho::AbstractBytes, p::Param)
-    hash = reinterpret(Int,rho) # ! change this in release
-    c = vcat(zeros(Int,p.n-p.tau),rand(MersenneTwister(hash[1]),[-1,1],p.tau))
-    shuffle!(MersenneTwister(hash[1]),c)
+    # TODO    use shake here to extract bits as in spezification !!!
+    hash = reinterpret(Int, rho) # ! change this in release
+    c = vcat(zeros(Int, p.n - p.tau), rand(MersenneTwister(abs(hash[1])), [-1, 1], p.tau))
+    shuffle!(MersenneTwister(abs(hash[1])), c)
     # now we have a vector with  (p.n)  entries, tau +- 1
-    c = base_ring(p.R)(c)
+    c = base_ring(p.R).(c)
     # return polynomial of the vector 
     #(an element)
     return sum(c .* [gen(p.R)^i for i = 0:p.n-1])
-end 
+end
+
 
 
 
 end # module Dilithium
-
