@@ -11,8 +11,19 @@ using .Dilithium, Test, Nemo, .SHAK3, Random
 # TODO compare with known answer testset
 # TODO check secure randomness 
 
-# Workspace
+# Workspace 
+#=
+p = Dilithium.LV5
+ck = Dilithium.compress_key( Dilithium.KeyGen(p)[2], p);
+sg = Dilithium.Sign(ck[2], p, b"hallo");
+typeof(sg[1])
+typeof(sg[2])
+typeof(sg[3])
+println(sg[3])
 
+sg[]
+Dilithium.Vrfy(ck[1], b"hallo",sg, p)
+=#
 # Tesspace
 @testset "verfysign" begin 
     for i = 1:3
