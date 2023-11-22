@@ -10,6 +10,7 @@ using .Dilithium, Test, Nemo, .SHAK3, Random
 # TODO compare with known answer testset
 # TODO check secure randomness 
 
+
 # Workspace 
 #=
 p = Dilithium.LV5
@@ -35,6 +36,15 @@ Dilithium.Vrfy(ck[1], b"hallo",sg, p)
     end
     for i = 1:3
         p = Dilithium.LV3
+        (pk, sk) = Dilithium.KeyGen(p)
+        sig = Dilithium.Sign(sk, b"hallo", p)
+        @test Dilithium.Vrfy(pk, b"hallo", sig, p) == true
+        sig.c0[1] += 1
+        @test Dilithium.Vrfy(pk, b"hallo", sig, p) == false
+    end
+    #small instance
+    for i = 1:3
+        p = Dilithium.Param(n=64)
         (pk, sk) = Dilithium.KeyGen(p)
         sig = Dilithium.Sign(sk, b"hallo", p)
         @test Dilithium.Vrfy(pk, b"hallo", sig, p) == true
@@ -87,3 +97,4 @@ end
     end
     # why error here?
 end
+

@@ -210,7 +210,7 @@ function extract_byte(ctx::SHAKEByteExtractor)
 
     ctx.extracted += 1
     if ctx.extracted > 136
-        digest!(ctx.shake, 136, pointer(buffer))
+        digest!(ctx.shake, UInt(136), pointer(ctx.buffer))
         ctx.extracted = 1
     end
 

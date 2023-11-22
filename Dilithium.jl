@@ -261,18 +261,18 @@ function sampleinball(rho::AbstractBytes, p::Param)
     ctx = SHAKEByteExtractor(SHAKE_256_CTX(), rho)
 
     rand_bytes = [extract_byte(ctx) for _ = 1:8]
-
+    @assert(p.tau <= p.n)
     @assert(p.tau <= 64)
     sign_bits = vcat(digits.(rand_bytes, base=2, pad=8)...)[1:p.tau]
-    c = zeros(Int, 256)
+    c = zeros(Int, p.n)
 
-    for i = 256-p.tau:255
+    for i = p.n-p.tau:p.n-1
         j = extract_byte(ctx)
         while j > i
             j = extract_byte(ctx)
         end
 
-        s = sign_bits[i-(256-p.tau)+1]
+        s = sign_bits[i-(p.n-p.tau)+1]
 
         c[i+1] = c[j+1]
         c[j+1] = (-1)^s
