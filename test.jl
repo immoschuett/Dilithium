@@ -27,7 +27,7 @@ Dilithium.Vrfy(ck[1], b"hallo",sg, p)
 @testset "verfysign" begin 
     for i = 1:3
         p = Dilithium.LV5
-        ck = Dilithium.compress_key( Dilithium.KeyGen(p)[2], p);
+        ck = Dilithium.KeyGen(p);
         sg = Dilithium.Sign(ck[2], p, b"hallo");
         @test Dilithium.Vrfy(ck[1], b"hallo",sg, p) == true
         sg[1][1]+=1
@@ -35,7 +35,7 @@ Dilithium.Vrfy(ck[1], b"hallo",sg, p)
     end 
     for i = 1:3
         p = Dilithium.LV3
-        ck = Dilithium.compress_key( Dilithium.KeyGen(p)[2], p);
+        ck = Dilithium.KeyGen(p);
         sg = Dilithium.Sign(ck[2], p, b"hallo");
         @test Dilithium.Vrfy(ck[1], b"hallo",sg, p) == true
         sg[1][1]+=1

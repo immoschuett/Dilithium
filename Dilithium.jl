@@ -24,26 +24,13 @@ struct Param
     seed::AbstractBytes
 end
 
-struct Pk
-    A::Matrix{T}
-    t::Matrix{T}
-end
-
-struct Sk
-    # use 3-dimensional arrays 
-    A::Matrix{T}
-    t::Matrix{T}
-    s1::Matrix{T}
-    s2::Matrix{T}
-end
-# compressed PK, SK structs 
-struct compPk
+struct PublicKey
     A::Matrix{T}
     t1::Matrix{T}
     tr::AbstractBytes
 end
 
-struct compSk
+struct SecretKey
     A::Matrix{T}
     tr::AbstractBytes
     s1::Matrix{T}
@@ -83,46 +70,34 @@ function KeyGen(p::Param=Param())
 
     t = (A * s1 + s2) .% p.mod
 
-    pk = Pk(A, t)
-    sk = Sk(A, t, s1, s2)
+    t1 = power2left.(ring2array(t, p), Ref(p))
+    t0 = array2ring(power2right.(ring2array(t, p), Ref(p)), p)
+    tr = shake256(vcat(p.seed, reinterpret(UInt8, UInt32.(reshape(lift.(t1), p.k * p.n)))), UInt(32))
 
-    #return compress_key(sk,p)
-    return (pk, sk)
+    t1 = array2ring(t1, p)
+    return (PublicKey(A, t1, tr), SecretKey(A, tr, s1, s2, t0))
 end
 
-function compress_key(sk::Sk, p::Param)
-    # return compPk, compSk
-    t1 = array2ring(power2left.(ring2array(sk.t, p), Ref(p)), p)
-    t0 = array2ring(power2right.(ring2array(sk.t, p), Ref(p)), p)
-    tr = shake256(vcat(p.seed, p.seed), UInt(32))
-    return (compPk(sk.A, t1, tr), compSk(sk.A, tr, sk.s1, sk.s2, t0))
-end
-
-function Sign(csk::compSk, p::Param, m::AbstractBytes)
-
+function Sign(sk::SecretKey, p::Param, m::AbstractBytes)
     BR = base_ring(p.R)
-    A =  csk.A
-    s1 = csk.s1
-    s2 = csk.s2
-    t0 = csk.t0
-    mu = shake256(vcat(csk.tr, m), UInt(64))
+    mu = shake256(vcat(sk.tr, m), UInt(64))
     c0 = undef
     z, h = [], []
     while z == [] && h == []
         # return y in S_gamma1 ^ l 
         y = array2ring(BR.(rand(-p.gamma1:p.gamma1, p.l, 1, p.n)), p)
-        w = (A * y) .% p.mod
+        w = (sk.A * y) .% p.mod
         w1 = HighBits(w, p)
         c0 = shake256(vcat(mu, UInt8.(reshape(w1, p.k * p.n))), UInt(32))
         c = sampleinball(c0, p)
-        z = (y + (s1 .* c)) .% p.mod
-        r0 = LowBits((w .- (s2 .* c)) .% p.mod, p)
+        z = (y + (sk.s1 .* c)) .% p.mod
+        r0 = LowBits((w .- (sk.s2 .* c)) .% p.mod, p)
         # note Low,Higbits return ZZRingElem in centered representation
         if ((c_abs(z, p) >= (p.gamma1 - p.beta))) | ((c_abs_z(r0) >= (p.gamma2 - p.beta)))
             z, h = [], []
         else
-            h = MakeHint((t0 .* (c * (-1))) .% p.mod, (w - s2 .* c + t0 .* c) .% p.mod, p)
-            if (c_abs((t0 .* c) .% p.mod, p) >= p.gamma2) | (sum(h) > p.omega)
+            h = MakeHint((sk.t0 .* (c * (-1))) .% p.mod, (w - sk.s2 .* c + sk.t0 .* c) .% p.mod, p)
+            if (c_abs((sk.t0 .* c) .% p.mod, p) >= p.gamma2) | (sum(h) > p.omega)
                 z, h = [], []
             end
         end
@@ -130,15 +105,13 @@ function Sign(csk::compSk, p::Param, m::AbstractBytes)
     return (c0, z, h)
 end
 
-function Vrfy(cpk::compPk, m::AbstractBytes, sg, p)
+function Vrfy(pk::PublicKey, m::AbstractBytes, sg, p)
     c0 = sg[1]
     z = sg[2]
     h = sg[3]
-    A = cpk.A
-    t1 = cpk.t1
-    mu = shake256(vcat(cpk.tr, m), UInt(64))
+    mu = shake256(vcat(pk.tr, m), UInt(64))
     c = sampleinball(c0, p)
-    w1 = UseHint(h, (A * z - ((t1 .* c) .* (2^p.d))) .% p.mod, p)
+    w1 = UseHint(h, (pk.A * z - ((pk.t1 .* c) .* (2^p.d))) .% p.mod, p)
 
     return (c_abs(z, p) < (p.gamma1 - p.beta) && 
            (sum(h) <= p.omega) && 
