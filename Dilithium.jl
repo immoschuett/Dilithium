@@ -38,6 +38,12 @@ struct SecretKey
     t0::Matrix{T}
 end
 
+struct Signature
+    c0::Array{UInt8, 1}
+    z::Matrix{T}
+    h::BitArray{3}
+end
+
 function Param(n::Int=256, q::Int=8380417, k::Int=4, l::Int=4, eta::Int=2, gamma1::Int=2^17, gamma2::Int=divexact(8380416, 88), tau::Int=39, omega::Int=80, d::Int=13, seed::AbstractBytes=b"bads33d")
     ispow2(n) || @error "n is not a power of 2"
     isprime(q) || @error "q is not prime"
@@ -78,7 +84,7 @@ function KeyGen(p::Param=Param())
     return (PublicKey(A, t1, tr), SecretKey(A, tr, s1, s2, t0))
 end
 
-function Sign(sk::SecretKey, p::Param, m::AbstractBytes)
+function Sign(sk::SecretKey, m::AbstractBytes, p::Param)
     BR = base_ring(p.R)
     mu = shake256(vcat(sk.tr, m), UInt(64))
     c0 = undef
@@ -102,20 +108,17 @@ function Sign(sk::SecretKey, p::Param, m::AbstractBytes)
             end
         end
     end
-    return (c0, z, h)
+    return Signature(c0, z, h)
 end
 
-function Vrfy(pk::PublicKey, m::AbstractBytes, sg, p)
-    c0 = sg[1]
-    z = sg[2]
-    h = sg[3]
+function Vrfy(pk::PublicKey, m::AbstractBytes, sig::Signature, p::Param)
     mu = shake256(vcat(pk.tr, m), UInt(64))
-    c = sampleinball(c0, p)
-    w1 = UseHint(h, (pk.A * z - ((pk.t1 .* c) .* (2^p.d))) .% p.mod, p)
+    c = sampleinball(sig.c0, p)
+    w1 = UseHint(sig.h, (pk.A * sig.z - ((pk.t1 .* c) .* (2^p.d))) .% p.mod, p)
 
-    return (c_abs(z, p) < (p.gamma1 - p.beta) && 
-           (sum(h) <= p.omega) && 
-           (c0 == shake256(vcat(mu, UInt8.(reshape(w1, p.k * p.n))), UInt(32))))
+    return (c_abs(sig.z, p) < (p.gamma1 - p.beta) && 
+           (sum(sig.h) <= p.omega) && 
+           (sig.c0 == shake256(vcat(mu, UInt8.(reshape(w1, p.k * p.n))), UInt(32))))
 end
 
 
@@ -125,7 +128,7 @@ end
     returns  M::Array{Nemo.zzModRingElem},3}, it converts ring element of M[i,j] into a 3 dimensional Array C of coefficients.
     Where C[i,j,k] belongs to the k-th coefficient of the polynomial in M[i,j]. low k belong to low degree coefficients and high k to the highes degree coefficient.
 """
-function ring2array(M::Matrix{zzModPolyRingElem}, p)
+function ring2array(M::Matrix{zzModPolyRingElem}, p::Param)
     (a, b) = size(M)
     padded = pad_matrix(collect.(coefficients.(M)), p)
     return [padded[i, j][k] for i = 1:a, j = 1:b, k = 1:p.n]
@@ -140,11 +143,11 @@ function pad_matrix(M::Matrix{Vector{Nemo.zzModRingElem}}, p::Param)
     # returns type Matrix{Vector{Nemo.zzModRingElem}}
 end
 """
-        array2ring(M::Array{Nemo.zzModRingElem},3}, p::Param)
+        array2ring(M::Array{Nemo.zzModRingElem,3}, p::Param)
 
     returns  M::Matrix{zzModPolyRingElem}, it converts the Array containing the coefficient vectors to a Matrix of ring elements in p.R
 """
-function array2ring(M, p::Param)
+function array2ring(M::Array{Z, 3}, p::Param)
     (a, b) = size(M)
     M2 = zeros(p.R, a, b)
     function elem2elem(a)
@@ -187,6 +190,7 @@ function power2left(r::Z, p::Param)
     (r0 <= div(p.q, 2)) || (r0 -= mask)
     return base_ring(p.R)((r - r0) >> p.d)
 end
+
 function power2right(r::Z, p::Param)
     mask = 2^p.d
     r0 = lift(r) % mask
@@ -194,7 +198,8 @@ function power2right(r::Z, p::Param)
     (r0 <= div(p.q, 2)) || (r0 -= mask)
     return base_ring(p.R)(r0)
 end
-function decompose(r::Z, alpha, p::Param)
+
+function decompose(r::Z, alpha::Int, p::Param)
     r0 = lift(r) % alpha
     r = lift(r) % p.q
     # centered residue sys
@@ -207,16 +212,20 @@ function decompose(r::Z, alpha, p::Param)
     end
     return (r1, r0)
 end
-function highbits(r::Z, alpha, p::Param)
+
+function highbits(r::Z, alpha::Int, p::Param)
     return decompose(r, alpha, p)[1]
 end
-function lowbits(r::Z, alpha, p::Param)
+
+function lowbits(r::Z, alpha::Int, p::Param)
     return decompose(r, alpha, p)[2]
 end
-function makehint(z::Z, r::Z, alpha, p)
+
+function makehint(z::Z, r::Z, alpha::Int, p::Param)
     return highbits(r, alpha, p) != highbits(r + z, alpha, p)
 end
-function usehint(h, r::Z, alpha, p)
+
+function usehint(h, r::Z, alpha::Int, p::Param)
     p.q % alpha == 1 || @error "q != 1 mod alpha"
     m = divexact(p.q - 1, alpha)
     (r1, r0) = decompose(r, alpha, p)
@@ -235,18 +244,22 @@ function MakeHint(z::Matrix{T}, r::Matrix{T}, p)
     r = ring2array(r, p)
     return makehint.(z, r, Ref(2 * p.gamma2), Ref(p))
 end
+
 function UseHint(h, r::Matrix{T}, p)
     r = ring2array(r, p)
     return usehint.(h, r, Ref(2 * p.gamma2), Ref(p))
 end
+
 function HighBits(r::Matrix{T}, p)
     r = ring2array(r, p)
     return highbits.(r, Ref(2 * p.gamma2), Ref(p))
 end
+
 function LowBits(r::Matrix{T}, p)
     r = ring2array(r, p)
     return lowbits.(r, Ref(2 * p.gamma2), Ref(p))
 end
+
 function c_abs(e::Matrix{T}, p)
     return maximum(c_max.(ring2array(e, p), Ref(p)))
 end
