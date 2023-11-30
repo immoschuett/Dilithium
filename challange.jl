@@ -22,14 +22,14 @@ function export_challange(m ,p, pk, outfile = "c1.txt" )
         println(f, "\nh = ", exportformat(sig.h,p))
     end # the file f is automatically closed after this block finishes
 end
-function exportformat(A,p=Dilithium.Param())
-    if typeof(A)==Matrix{zzModPolyRingElem}
-        A = Int.(lift.(Dilithium.ring2array(pk.A, p)))
+function exportformat(In,p=Dilithium.Param())
+    if typeof(In)==Matrix{zzModPolyRingElem}
+        In = Int.(lift.(Dilithium.ring2array(In, p)))
     end
-    S = size(A)
+    S = size(In)
     B = Array{Array{Int}}(undef,S[1],S[2])
     for i=1:S[1],j=1:S[2]
-        B[i,j] = A[i,j,:]
+        B[i,j] = In[i,j,:]
     end 
     B = json(B)
     if S[2]==1 
@@ -47,9 +47,9 @@ function importformat(In,p=Dilithium.Param(),nest=3)
         end 
     end 
     if nest == 2
-        A = Array{Int}(undef,length(In),p.n)
+        A = Array{Int}(undef,length(In),1,p.n)
         for i=1:length(In),k=1:p.n
-            A[i,k] = In[i][k]
+            A[i,1,k] = In[i][k]
         end 
     end 
     return A
@@ -61,6 +61,7 @@ end
     (pk,sk) = Dilithium.KeyGen(p);
     sig = Dilithium.Sign(sk, m, p);
     @test importformat(exportformat(pk.A,p),p) == Dilithium.ring2array(pk.A,p)
+    @test importformat(exportformat(pk.t1,p),p,2) == Dilithium.ring2array(pk.t1,p)
 end
 export_challange(m ,p, pk);
 
