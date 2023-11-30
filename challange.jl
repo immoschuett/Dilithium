@@ -3,10 +3,10 @@ include("Shake/shake.jl")
 using .Dilithium, Test, Nemo, .SHAK3, Random, JSON
 # gen challange: 
 
-m = b"Hallo Welt" 
-p = Dilithium.LV5
-(pk,sk) = Dilithium.KeyGen(p)
-sig = Dilithium.Sign(sk, m, p)
+m = b"Hallo Welt";
+p = Dilithium.LV2;
+(pk,sk) = Dilithium.KeyGen(p);
+sig = Dilithium.Sign(sk, m, p);
 function export_challange(m ,p, pk, outfile = "c1.txt" )
     open(outfile, "w") do f
         println(f, "\n#PARAMETER: \nn = ", p.n, "\nq = ", p.q, "\nk = ", p.k, "\nl = ", p.l, "\neta = ", p.eta, " #η\ngamma1 = ", p.gamma1, " #γ_1\ngamma2 = ", p.gamma2, " #γ_2\ntau = ", p.tau, " #τ\nbeta = ", p.beta, " #β\nomega = ", p.omega, " #ω\nd = ", p.d)
@@ -38,11 +38,12 @@ function exportformat(A,p=Dilithium.Param())
     return B
 end 
 function importformat(In,p=Dilithium.Param(),nest=3)
+    In = JSON.parse(In)
     # input A as nested vector of Int
     if nest == 3 
         A = Array{Int}(undef,p.k,p.l,p.n)
         for i=1:p.k,j=1:p.l,k=1:p.n
-            A[i,j,k] = In[i][j][k]
+            A[i,j,k] = In[j][i][k]
         end 
     end 
     if nest == 2
@@ -55,18 +56,12 @@ function importformat(In,p=Dilithium.Param(),nest=3)
 end
 
 @testset "In_export" begin
-    m = b"Hallo Welt" 
-    p = Dilithium.LV5
-    (pk,sk) = Dilithium.KeyGen(p)
-    sig = Dilithium.Sign(sk, m, p)
-    @test  importformat(exportformat(pk.A))
+    m = b"Hallo Welt";
+    p = Dilithium.LV2;
+    (pk,sk) = Dilithium.KeyGen(p);
+    sig = Dilithium.Sign(sk, m, p);
+    @test importformat(exportformat(pk.A,p),p) == Dilithium.ring2array(pk.A,p)
 end
-export_challange(m ,p, pk)
+export_challange(m ,p, pk);
 
 # check that import(export) is the sameimportformat(exportformat(A))
-
-m = b"Hallo Welt" 
-p = Dilithium.LV5
-(pk,sk) = Dilithium.KeyGen(p)
-sig = Dilithium.Sign(sk, m, p)
-importformat(exportformat(pk.A))
