@@ -11,7 +11,7 @@ function manual_transpose(M,p)
     end 
     return C
 end 
-function export_challange(m ,p, pk, outfile = "c2.txt" )
+function export_challange(m ,p, pk, outfile = "c1.txt" )
     open(outfile, "w") do f
         println(f, "\n#PARAMETER: \nn = ", p.n, "\nq = ", p.q, "\nk = ", p.k, "\nl = ", p.l, "\neta = ", p.eta, " #η\ngamma1 = ", p.gamma1, " #γ_1\ngamma2 = ", p.gamma2, " #γ_2\ntau = ", p.tau, " #τ\nbeta = ", p.beta, " #β\nomega = ", p.omega, " #ω\nd = ", p.d)
         println(f, "\n#MESSAGE:")
@@ -54,14 +54,39 @@ function importformat(In,p=Dilithium.Param(),nest=3)
         end 
     end 
     if nest == 2
-        A = Array{Int}(undef,length(In),1,p.n)
-        for i= 1:p.k,k=1:p.n
+        d = length(In)
+        A = Array{Int}(undef,d,1,p.n)
+        for i= 1:d,k=1:p.n
             A[i,1,k] = In[i][k]
         end 
     end 
     return A
 end
 
+# PARSER:
+
+# parser: / copy this to a c3.jl file.
+p = Dilithium.LV3
+A = importformat(string(A),p,3)
+em = UInt8.(em)
+c_tilde = UInt8.(c_tilde)
+t1 = importformat(string(t1),p,2)
+tr = UInt8.(tr)
+z =  importformat(string(z),p,2)
+h = Bool.(importformat(string(h),p,2))
+z
+# type pk: 
+pk = Dilithium.PublicKey(Dilithium.array2ring(A,p),Dilithium.array2ring(t1,p),tr)
+# type signature:
+sig = Dilithium.Signature(c_tilde, Dilithium.array2ring(z,p), h)
+
+# verify:
+Dilithium.Vrfy(pk, em, sig, p)
+
+#
+
+
+# gen challange:
 m = b"Hallo Welt";
 p = Dilithium.LV3
 (pk,sk) = Dilithium.KeyGen(p);
@@ -69,30 +94,3 @@ pk.t1[1]
 sig = Dilithium.Sign(sk, m, p);
 sig.z
 export_challange(m,p,pk)
-
-@testset "In_export" begin
-    m = b"Hallo Welt";
-    p = Dilithium.LV3;
-    (pk,sk) = Dilithium.KeyGen(p);
-    sig = Dilithium.Sign(sk, m, p);
-    @test importformat(exportformat(pk.A,p),p) == Dilithium.ring2array(pk.A,p)
-    @test importformat(exportformat(pk.t1,p),p,2) == Dilithium.ring2array(pk.t1,p)
-end
-export_challange(m ,p, pk);
-
-# check that import(export) is the sameimportformat(exportformat(A))
-
-
-w = Dilithium.Vrfy(pk,m,sig,p)
-www = Dilithium.bitpacking(w,p)
-println(www)
-
-
-m = b"Hallo Welt";
-p = Dilithium.LV3;
-(pk,sk) = Dilithium.KeyGen(p);
-sig = Dilithium.Sign(sk, m, p);
-
-exportformat(pk.A,p)
-importformat(exportformat(pk.A,p),p) == Dilithium.ring2array(pk.A,p)
-@test importformat(exportformat(pk.t1,p),p,2) == Dilithium.ring2array(pk.t1,p)
