@@ -93,7 +93,7 @@ function Sign(sk::SecretKey, m::AbstractBytes, p::Param)::Signature
         y = array2ring(BR.(rand(-p.gamma1:p.gamma1, p.l, 1, p.n)), p)
         w = (sk.A * y) .% p.mod
         w1 = HighBits(w, p)
-        c0 = shake256(vcat(mu, UInt8.(reshape(w1, p.k * p.n))), UInt(32))
+        c0 = shake256(vcat(mu, bitpacking(w1, p)), UInt(32))
         c = sampleinball(c0, p)
         z = (y + (sk.s1 .* c)) .% p.mod
         r0 = LowBits((w .- (sk.s2 .* c)) .% p.mod, p)
@@ -110,14 +110,40 @@ function Sign(sk::SecretKey, m::AbstractBytes, p::Param)::Signature
     return Signature(c0, z, h)
 end
 
-function Vrfy(pk::PublicKey, m::AbstractBytes, sig::Signature, p::Param)::Bool
+function Vrfy(pk::PublicKey, m::AbstractBytes, sig::Signature, p::Param)#::Bool
     mu = shake256(vcat(pk.tr, m), UInt(64))
     c = sampleinball(sig.c0, p)
     w1 = UseHint(sig.h, (pk.A * sig.z - ((pk.t1 .* c) .* (2^p.d))) .% p.mod, p)
-
     return (c_abs(sig.z, p) < (p.gamma1 - p.beta) &&
             (sum(sig.h) <= p.omega) &&
-            (sig.c0 == shake256(vcat(mu, UInt8.(reshape(w1, p.k * p.n))), UInt(32))))
+            (sig.c0 == shake256(vcat(mu, bitpacking(w1, p)), UInt(32))))
+end
+
+function bitpacking(w,p)::Array{UInt8,1}
+    @assert ceil((p.q-1)/(2*p.gamma2)) == ((p.q-1)/(2*p.gamma2))
+    pr = Int(ceil(log2(Int((p.q-1)/(2*p.gamma2))))) # packing radius
+    # either 4 or 6 
+    @assert (pr in [4,6])
+    ret = UInt8[]
+    if pr == 4
+        for i = 1:p.k, k = 1:2:p.n
+            a = UInt8(w[i,1,k])
+            b = UInt8(w[i,1,k+1])
+            c = (a << 4) | b
+            push!(ret,c)
+        end 
+    end 
+    if pr == 6 
+        for i = 1:p.k, k = 1:3:p.n
+            a = UInt8(w[i,1,k])
+            b = UInt8(w[i,1,k+1])
+            c = UInt8(w[i,1,k+2])
+            d = (a << 2) | ( b >> 4)
+            e = (b << 4) | c
+            push!(ret,d,e)
+        end 
+    end 
+    return ret
 end
 
 
@@ -141,6 +167,17 @@ function pad_matrix(M::Matrix{Vector{Z}}, p::Param)::Matrix{Vector{Z}}
 end
 
 function array2ring(M::Array{Z,3}, p::Param)::Matrix{T}
+    (a, b) = size(M)
+    M2 = zeros(p.R, a, b)
+    function elem2elem(a)
+        return sum(a .* [gen(p.R)^i for i = 0:length(a)-1])
+    end
+    for i = 1:a, j = 1:b
+        M2[i, j] = elem2elem(M[i, j, :])
+    end
+    return M2
+end
+function array2ring(M::Array{Int,3}, p::Param)::Matrix{T}
     (a, b) = size(M)
     M2 = zeros(p.R, a, b)
     function elem2elem(a)
@@ -283,4 +320,5 @@ function sampleinball(rho::AbstractBytes, p::Param)
 
     return sum(c .* [gen(p.R)^i for i = 0:p.n-1])
 end
+
 end # module Dilithium
