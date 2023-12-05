@@ -134,7 +134,7 @@ function bitpacking(w,p)::Array{UInt8,1}
         end 
     end 
     if pr == 6 
-        for i = 1:p.k, k = 1:3:p.n
+        for i = 1:p.k, k = 1:3:p.n-3
             a = UInt8(w[i,1,k])
             b = UInt8(w[i,1,k+1])
             c = UInt8(w[i,1,k+2])
@@ -177,6 +177,7 @@ function array2ring(M::Array{Z,3}, p::Param)::Matrix{T}
     end
     return M2
 end
+
 function array2ring(M::Array{Int,3}, p::Param)::Matrix{T}
     (a, b) = size(M)
     M2 = zeros(p.R, a, b)
