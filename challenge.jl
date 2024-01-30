@@ -112,9 +112,11 @@ export_challenge(m,p,pk)
 # sig.z
 # export_challenge(m, p, pk, "n=16.txt")
 
+# TODO: All taus from moodle
 taus = [16]
 for tau = taus
-    m = base32("lovers")
+    # Choose random 6 letter word, change in some way
+    m = base32("some_word")
 
     param = Dilithium.Param(tau = tau)
     (pk, sk) = Dilithium.KeyGen(param)
@@ -122,7 +124,7 @@ for tau = taus
 
     Dilithium.Vrfy(pk, m, sig, param) == true || @error "Could not vrfy signature!"
 
-    file_name = replace("challenge_{}.txt", "{}" => string(m_idx, base = 10, pad = 2))
+    file_name = replace("challenge_tau_{}.txt", "{}" => string(tau, base = 10, pad = 2))
     export_challenge(m, param, pk, sig, file_name)
 end
 
@@ -132,12 +134,15 @@ struct TestParam
     l :: Int
 end
 
+# TODO: More messages
 messages = shuffle([
     b"\"Yer a wizard, Harry.\" ― Rubeus Hagrid",
 ])
 
+# TODO: all params from moodle
 parameters = [
-    TestParam(16, 18, 18)
+    TestParam(16, 18, 18),
+    # TestParam(n, k, l),
 ]
 
 m_idx = 1
@@ -149,13 +154,15 @@ for (; n, k, l) = parameters
 
     m = messages[m_idx]
 
+    # TODO: change message in some way (swap characters or some char -/+ 1)
+
     param = Dilithium.Param(n = n, k = k, l = l, tau = tau)
     (pk, sk) = Dilithium.KeyGen(param)
     sig = Dilithium.Sign(sk, m, param)
 
     Dilithium.Vrfy(pk, m, sig, param) == true || @error "Could not vrfy signature!"
 
-    file_name = replace("challenge_{}.txt", "{}" => string(m_idx, base = 10, pad = 2))
+    file_name = replace("challenge_uf_{}.txt", "{}" => string(m_idx, base = 10, pad = 2))
     export_challenge(m, param, pk, sig, file_name)
 
     global m_idx = m_idx + 1
