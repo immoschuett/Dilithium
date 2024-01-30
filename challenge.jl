@@ -1,7 +1,7 @@
 include("Dilithium.jl")
 include("Shake/shake.jl")
 using .Dilithium, Test, Nemo, .SHAK3, Random, JSON
-# gen challange: 
+# gen challenge: 
 
 function manual_transpose(M,p)
     M = Int.(lift.(Dilithium.ring2array(M,p)))
@@ -11,7 +11,8 @@ function manual_transpose(M,p)
     end 
     return C
 end 
-function export_challange(m ,p, pk, outfile = "c1.txt" )
+
+function export_challenge(m ,p, pk, sig, outfile = "c1.txt" )
     open(outfile, "w") do f
         println(f, "\n#PARAMETER: \nn = ", p.n, "\nq = ", p.q, "\nk = ", p.k, "\nl = ", p.l, "\neta = ", p.eta, " #η\ngamma1 = ", p.gamma1, " #γ_1\ngamma2 = ", p.gamma2, " #γ_2\ntau = ", p.tau, " #τ\nbeta = ", p.beta, " #β\nomega = ", p.omega, " #ω\nd = ", p.d)
         println(f, "\n#MESSAGE:")
@@ -27,6 +28,7 @@ function export_challange(m ,p, pk, outfile = "c1.txt" )
         println(f, "\nh = ", exportformat(sig.h,p))
     end # the file f is automatically closed after this block finishes
 end
+
 function exportformat(In,p=Dilithium.Param())
     # do not change this: 
     if typeof(In) == Matrix{Dilithium.T}
@@ -43,6 +45,7 @@ function exportformat(In,p=Dilithium.Param())
     end 
     return B
 end 
+
 function importformat(In,p=Dilithium.Param(),nest=3)
     # WARNING  do not use this function!
     In = JSON.parse(In)
@@ -87,27 +90,73 @@ Dilithium.Vrfy(pk, em, sig, p)
 
 #
 
-
-# gen challange:
+# gen challenge:
 m = b"Hallo Welt";
 p = Dilithium.LV3
 (pk,sk) = Dilithium.KeyGen(p);
 pk.t1[1]
 sig = Dilithium.Sign(sk, m, p);
 sig.z
-export_challange(m,p,pk)
+export_challenge(m,p,pk)
 
 =#
 
 # example generation:
-message1 = b"'Hearing voices no one else can hear isn’t a good sign, even in the wizarding world.' — Ron Weasley"
-m = b"'Hearing voices no one else can hear isn’t a good sign, even in the wizarding world.' — Ron Weasley"
-#! IMPORTANT: later change to utf-8
-p = Dilithium.Param(n=16, k=23, l=23, tau=12)
-(pk, sk) = Dilithium.KeyGen(p);
-pk.t1[1]
-sig = Dilithium.Sign(sk, m, p);
-Dilithium.Vrfy(pk, m, sig, p) == true
-sig.z
-export_challange(m, p, pk, "n=16.txt")
+# m = b"'Hearing voices no one else can hear isn’t a good sign, even in the wizarding world.' — Ron Weasley"
+# #! IMPORTANT: later change to utf-8
+# p = Dilithium.Param(n=16, k=23, l=23, tau=12)
+# (pk, sk) = Dilithium.KeyGen(p);
+# pk.t1[1]
+# sig = Dilithium.Sign(sk, m, p);
+# Dilithium.Vrfy(pk, m, sig, p) == true
+# sig.z
+# export_challenge(m, p, pk, "n=16.txt")
 
+taus = [16]
+for tau = taus
+    m = base32("lovers")
+
+    param = Dilithium.Param(tau = tau)
+    (pk, sk) = Dilithium.KeyGen(param)
+    sig = Dilithium.Sign(sk, m, param)
+
+    Dilithium.Vrfy(pk, m, sig, param) == true || @error "Could not vrfy signature!"
+
+    file_name = replace("challenge_{}.txt", "{}" => string(m_idx, base = 10, pad = 2))
+    export_challenge(m, param, pk, sig, file_name)
+end
+
+struct TestParam
+    n :: Int
+    k :: Int
+    l :: Int
+end
+
+messages = shuffle([
+    b"\"Yer a wizard, Harry.\" ― Rubeus Hagrid",
+])
+
+parameters = [
+    TestParam(16, 18, 18)
+]
+
+m_idx = 1
+for (; n, k, l) = parameters
+    tau = Dilithium.LV2.tau
+    if tau > n 
+        tau = divexact(3 * n, 4)
+    end
+
+    m = messages[m_idx]
+
+    param = Dilithium.Param(n = n, k = k, l = l, tau = tau)
+    (pk, sk) = Dilithium.KeyGen(param)
+    sig = Dilithium.Sign(sk, m, param)
+
+    Dilithium.Vrfy(pk, m, sig, param) == true || @error "Could not vrfy signature!"
+
+    file_name = replace("challenge_{}.txt", "{}" => string(m_idx, base = 10, pad = 2))
+    export_challenge(m, param, pk, sig, file_name)
+
+    global m_idx = m_idx + 1
+end
