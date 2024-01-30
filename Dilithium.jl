@@ -44,7 +44,7 @@ struct Signature
     h::BitArray{3}
 end
 
-function Param(; n::Int=256, q::Int=8380417, k::Int=4, l::Int=4, eta::Int=2, gamma1::Int=2^17, gamma2::Int=divexact(8380416, 88), tau::Int=39, omega::Int=80, d::Int=13, seed::AbstractBytes=b"bads33d")::Param
+function Param(; n::Int=256, q::Int=8380417, k::Int=4, l::Int=4, eta::Int=2, gamma1::Int=2^17, gamma2::Int=divexact(8380416, 88), tau::Int=39, omega::Int=80, d::Int=13, seed::AbstractBytes= rand(RandomDevice(), UInt8, 32))::Param
     ispow2(n) || @error "n is not a power of 2"
     isprime(q) || @error "q is not prime"
     (1 == q % (2 * n)) || @warn "NTT not supported by this choice of parameters"
@@ -62,12 +62,12 @@ const LV3 = Param(n=256, q=8380417, k=6, l=5, eta=4, gamma1=2^19, gamma2=divexac
 
 const LV5 = Param(n=256, q=8380417, k=6, l=5, eta=2, gamma1=2^19, gamma2=divexact(8380416, 32), tau=60, omega=75)
 
-function KeyGen(p::Param=Param())::Tuple{PublicKey,SecretKey}
+function KeyGen(p::Param=Param())::Tuple{PublicKey, SecretKey}
     BR = base_ring(p.R)
 
-    A = rand(BR, p.k, p.l, p.n)
-    s1 = BR.(rand(-p.eta:p.eta, p.l, 1, p.n))
-    s2 = BR.(rand(-p.eta:p.eta, p.k, 1, p.n))
+    A = rand(RandomDevice(), BR, p.k, p.l, p.n)
+    s1 = BR.(rand(RandomDevice(), -p.eta:p.eta, p.l, 1, p.n))
+    s2 = BR.(rand(RandomDevice(), -p.eta:p.eta, p.k, 1, p.n))
 
     A = array2ring(A, p)
     s1 = array2ring(s1, p)
@@ -90,7 +90,7 @@ function Sign(sk::SecretKey, m::AbstractBytes, p::Param)::Signature
     z, h = undef, undef
     while z == undef && h == undef
         # return y in S_gamma1 ^ l 
-        y = array2ring(BR.(rand(-p.gamma1:p.gamma1, p.l, 1, p.n)), p)
+        y = array2ring(BR.(rand(RandomDevice(), -p.gamma1:p.gamma1, p.l, 1, p.n)), p)
         w = (sk.A * y) .% p.mod
         w1 = HighBits(w, p)
         c0 = shake256(vcat(mu, bitpacking(w1, p)), UInt(32))
