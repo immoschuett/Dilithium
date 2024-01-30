@@ -95,6 +95,5 @@ end
         @test Dilithium.array2ring(Dilithium.ring2array(A, p), p) == A
         @test Dilithium.array2ring(Dilithium.ring2array(zeros(p.R, 5, 7), p), p) == zeros(p.R, 5, 7)
     end
-    # why error here?
 end
 

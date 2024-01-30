@@ -17,7 +17,7 @@ function export_challange(m ,p, pk, outfile = "c1.txt" )
         println(f, "\n#MESSAGE:")
         println(f, "\nem = ", json(m))
         println(f, "\n#PUBLIC_KEY:")
-        #! this will transpose A since iterating over A will be columns !!! 
+        # this will transpose A since iterating over A will be columns !!! 
         println(f, "\nA = ", exportformat(manual_transpose(pk.A,p),p))
         println(f, "\nt1 = ", exportformat(pk.t1,p))
         println(f, "\ntr = ", json(pk.tr))
@@ -28,7 +28,7 @@ function export_challange(m ,p, pk, outfile = "c1.txt" )
     end # the file f is automatically closed after this block finishes
 end
 function exportformat(In,p=Dilithium.Param())
-    # ! do not change this !! 
+    # do not change this: 
     if typeof(In) == Matrix{Dilithium.T}
         In = Int.(lift.(Dilithium.ring2array(In,p)))
     end 
@@ -44,6 +44,7 @@ function exportformat(In,p=Dilithium.Param())
     return B
 end 
 function importformat(In,p=Dilithium.Param(),nest=3)
+    # WARNING  do not use this function!
     In = JSON.parse(In)
     # input A as nested vector of Int
     if nest == 3 
@@ -63,6 +64,7 @@ function importformat(In,p=Dilithium.Param(),nest=3)
     return A
 end
 
+#=
 # PARSER:
 
 # parser: / copy this to a c3.jl file.
@@ -94,3 +96,18 @@ pk.t1[1]
 sig = Dilithium.Sign(sk, m, p);
 sig.z
 export_challange(m,p,pk)
+
+=#
+
+# example generation:
+message1 = b"'Hearing voices no one else can hear isn’t a good sign, even in the wizarding world.' — Ron Weasley"
+m = b"'Hearing voices no one else can hear isn’t a good sign, even in the wizarding world.' — Ron Weasley"
+#! IMPORTANT: later change to utf-8
+p = Dilithium.Param(n=16, k=23, l=23, tau=12)
+(pk, sk) = Dilithium.KeyGen(p);
+pk.t1[1]
+sig = Dilithium.Sign(sk, m, p);
+Dilithium.Vrfy(pk, m, sig, p) == true
+sig.z
+export_challange(m, p, pk, "n=16.txt")
+
