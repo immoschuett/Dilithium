@@ -49,7 +49,7 @@ function Param(; n::Int=256, q::Int=8380417, k::Int=4, l::Int=4, eta::Int=2, gam
     isprime(q) || @error "q is not prime"
     (1 == q % (2 * n)) || @warn "NTT not supported by this choice of parameters"
     tau <= n || @error "tau > n"
-    R, _ = PolynomialRing(ResidueRing(ZZ, q), "x")
+    R, _ = PolynomialRing(ResidueRing(ZZ, q)[1], "x")
     mod = (gen(R)^n + 1)
     beta = 2 * tau
     return Param(n, q, k, l, eta, gamma1, gamma2, tau, beta, omega, d, R, mod, seed)
