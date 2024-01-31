@@ -112,11 +112,13 @@ export_challenge(m,p,pk)
 # sig.z
 # export_challenge(m, p, pk, "n=16.txt")
 
-# TODO: All taus from moodle
-taus = [16]
-for tau = taus
-    # Choose random 6 letter word, change in some way
-    m = base32("some_word")
+# All taus from moodle
+taus = [4,5,6,7,8,9,10]
+words_b32 = shuffle([])
+
+for (idx,tau) in enumerate(taus)
+    # Choose random 5-7 letter word, change in some way
+    m = words_b32[idx]
 
     param = Dilithium.Param(tau = tau)
     (pk, sk) = Dilithium.KeyGen(param)
@@ -134,14 +136,23 @@ struct TestParam
     l :: Int
 end
 
-# TODO: More messages
-messages = shuffle([
-    b"\"Yer a wizard, Harry.\" ― Rubeus Hagrid",
-])
+# More messages
+messages = shuffle([])
 
-# TODO: all params from moodle
+# All params from moodle
 parameters = [
-    TestParam(16, 18, 18),
+    TestParam(16,18,18),
+    TestParam(32,9,6),
+    TestParam(16,19,19),
+    TestParam(32,9,5),
+    TestParam(64,5,5),
+    TestParam(16,20,20),
+    TestParam(16,21,21),
+    TestParam(16,22,22),
+    TestParam(16,23,23),
+    TestParam(64,6,6),
+    TestParam(64,6,5),
+    TestParam(16,24,24),
     # TestParam(n, k, l),
 ]
 
@@ -152,9 +163,10 @@ for (; n, k, l) = parameters
         tau = divexact(3 * n, 4)
     end
 
-    m = messages[m_idx]
+    m0 = messages[m_idx]
 
-    # TODO: change message in some way (swap characters or some char -/+ 1)
+    # swap first and last character
+    m = m0[end] * m[2:end-1] * m0[1]
 
     param = Dilithium.Param(n = n, k = k, l = l, tau = tau)
     (pk, sk) = Dilithium.KeyGen(param)
