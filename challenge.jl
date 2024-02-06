@@ -67,58 +67,66 @@ function importformat(In,p=Dilithium.Param(),nest=3)
     return A
 end
 
-#=
-# PARSER:
-
-# parser: / copy this to a c3.jl file.
-p = Dilithium.LV3
-A = importformat(string(A),p,3)
-em = UInt8.(em)
-c_tilde = UInt8.(c_tilde)
-t1 = importformat(string(t1),p,2)
-tr = UInt8.(tr)
-z =  importformat(string(z),p,2)
-h = Bool.(importformat(string(h),p,2))
-z
-# type pk: 
-pk = Dilithium.PublicKey(Dilithium.array2ring(A,p),Dilithium.array2ring(t1,p),tr)
-# type signature:
-sig = Dilithium.Signature(c_tilde, Dilithium.array2ring(z,p), h)
-
-# verify:
-Dilithium.Vrfy(pk, em, sig, p)
-
-#
-
-# gen challenge:
-m = b"Hallo Welt";
-p = Dilithium.LV3
-(pk,sk) = Dilithium.KeyGen(p);
-pk.t1[1]
-sig = Dilithium.Sign(sk, m, p);
-sig.z
-export_challenge(m,p,pk)
-
-=#
-
-# example generation:
-# m = b"'Hearing voices no one else can hear isn’t a good sign, even in the wizarding world.' — Ron Weasley"
-# #! IMPORTANT: later change to utf-8
-# p = Dilithium.Param(n=16, k=23, l=23, tau=12)
-# (pk, sk) = Dilithium.KeyGen(p);
-# pk.t1[1]
-# sig = Dilithium.Sign(sk, m, p);
-# Dilithium.Vrfy(pk, m, sig, p) == true
-# sig.z
-# export_challenge(m, p, pk, "n=16.txt")
-
 # All taus from moodle
-taus = [4,5,6,7,8,9,10]
-words_b32 = shuffle([])
+taus = [4, 5, 6, 7, 8, 9, 10]
+words = [
+    # 6 7 9 10 12 13 15
+]
 
-for (idx,tau) in enumerate(taus)
+function encode(w :: String) :: Vector{UInt8}
+    alphabet = [
+        'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K',
+        'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V',
+        'W', 'X', 'Y', 'Z', '2', '3', '4', '5', '6', '7'
+    ]
+
+    if w[1] == 'A'
+        error("First token may not be 'A'")
+    end
+
+    encoded :: UInt128 = 0
+    for token in w
+        encoded_token = findfirst(isequal(token), alphabet) - 1
+        encoded <<= 5
+        encoded |= encoded_token
+    end
+
+    bytes = reinterpret(UInt8, [encoded]) |> Vector
+
+    while bytes[end] == 0
+        pop!(bytes)
+    end
+
+    return bytes
+end
+
+function decode(b :: Vector{UInt8}) :: String
+    alphabet = [
+        'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K',
+        'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V',
+        'W', 'X', 'Y', 'Z', '2', '3', '4', '5', '6', '7'
+    ]
+
+    extended_b = vcat(b, zeros(UInt8, 16 - length(b)))
+    b = reinterpret(UInt128, extended_b)[1]
+
+    decoded = ""
+
+    # we do not allow 'A' as the first character
+    while b != 0
+        encoded_token = b & 0b11111
+        decoded = alphabet[encoded_token + 1] * decoded
+        b >>= 5
+    end
+
+    return decoded
+end
+
+for (idx, tau) in enumerate(taus)
     # Choose random 5-7 letter word, change in some way
-    m = words_b32[idx]
+    length(words[idx]) == tau + (tau ÷ 2) || @error "Invalid word length"
+    m = encode(words[idx])
+    decode(m) == words[idx] || error("Encode != Decode")
 
     param = Dilithium.Param(tau = tau)
     (pk, sk) = Dilithium.KeyGen(param)
@@ -137,7 +145,8 @@ struct TestParam
 end
 
 # More messages
-messages = shuffle([])
+messages = shuffle([
+])
 
 # All params from moodle
 parameters = [
@@ -156,17 +165,13 @@ parameters = [
     # TestParam(n, k, l),
 ]
 
-m_idx = 1
-for (; n, k, l) = parameters
+for (idx, (; n, k, l)) = enumerate(parameters)
     tau = Dilithium.LV2.tau
     if tau > n 
         tau = divexact(3 * n, 4)
     end
 
-    m0 = messages[m_idx]
-
-    # swap first and last character
-    m = m0[end] * m[2:end-1] * m0[1]
+    m0 = messages[idx]
 
     param = Dilithium.Param(n = n, k = k, l = l, tau = tau)
     (pk, sk) = Dilithium.KeyGen(param)
@@ -174,8 +179,6 @@ for (; n, k, l) = parameters
 
     Dilithium.Vrfy(pk, m, sig, param) == true || @error "Could not vrfy signature!"
 
-    file_name = replace("challenge_uf_{}.txt", "{}" => string(m_idx, base = 10, pad = 2))
+    file_name = replace("challenge_uf_{}.txt", "{}" => string(idx, base = 10, pad = 2))
     export_challenge(m, param, pk, sig, file_name)
-
-    global m_idx = m_idx + 1
 end
